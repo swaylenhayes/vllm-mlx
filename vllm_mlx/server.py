@@ -1082,7 +1082,94 @@ def _parse_tool_calls_with_mitigation(
     cleaned_text, tool_calls = parse_tool_calls(output_text, request_dict)
     if not tool_calls:
         return cleaned_text, None
+    tools = request_dict.get("tools") if request_dict else None
+    if tools:
+        tool_calls = [
+            ToolCall(
+                id=tc.id,
+                type=tc.type,
+                function=FunctionCall(
+                    name=tc.function.name,
+                    arguments=_coerce_tool_arguments(
+                        tc.function.arguments, tc.function.name, tools
+                    ),
+                ),
+            )
+            for tc in tool_calls
+        ]
     return cleaned_text, _apply_tool_call_spray_policy(tool_calls, source=source)
+
+
+def _coerce_tool_arguments(
+    arguments_json: str, tool_name: str, tools: list[dict] | None
+) -> str:
+    """
+    Coerce tool call arguments to match the tool schema.
+
+    If a schema field expects "string" but the model produced an object/array,
+    JSON-stringify the value. This fixes a common LLM failure mode where models
+    output raw JSON objects instead of JSON strings for file content, etc.
+    """
+    if not tools:
+        return arguments_json
+
+    # Find the schema for this tool
+    schema = None
+    for tool in tools:
+        if isinstance(tool, dict) and tool.get("function", {}).get("name") == tool_name:
+            schema = tool["function"].get("parameters", {})
+            break
+
+    if not schema or "properties" not in schema:
+        return arguments_json
+
+    try:
+        arguments = json.loads(arguments_json)
+    except (json.JSONDecodeError, TypeError):
+        return arguments_json
+
+    if not isinstance(arguments, dict):
+        return arguments_json
+
+    properties = schema.get("properties", {})
+    changed = False
+
+    for key, value in arguments.items():
+        if key in properties:
+            expected_type = properties[key].get("type")
+            if expected_type == "string" and isinstance(value, (dict, list)):
+                arguments[key] = json.dumps(value, ensure_ascii=False, indent=2)
+                changed = True
+
+    if changed:
+        return json.dumps(arguments, ensure_ascii=False)
+
+    return arguments_json
+
+
+def _coerce_tool_call_delta_arguments(
+    tool_call: dict[str, Any], tools: list[dict] | None
+) -> dict[str, Any]:
+    """Coerce streaming tool-call arguments to match schema types when possible."""
+    if not tools:
+        return tool_call
+
+    call = dict(tool_call)
+    fn = call.get("function")
+    if isinstance(fn, dict):
+        fn_copy = dict(fn)
+        name = fn_copy.get("name")
+        arguments = fn_copy.get("arguments")
+        if isinstance(name, str) and isinstance(arguments, str):
+            fn_copy["arguments"] = _coerce_tool_arguments(arguments, name, tools)
+            call["function"] = fn_copy
+        return call
+
+    name = call.get("name")
+    arguments = call.get("arguments")
+    if isinstance(name, str) and isinstance(arguments, str):
+        call["arguments"] = _coerce_tool_arguments(arguments, name, tools)
+    return call
 
 
 def _parse_tool_calls_with_parser(
@@ -1140,13 +1227,16 @@ def _parse_tool_calls_with_parser(
         _tool_parser_instance.reset()
         result = _tool_parser_instance.extract_tool_calls(output_text, request_dict)
         if result.tools_called:
+            tools = request_dict.get("tools") if request_dict else None
             tool_calls = [
                 ToolCall(
                     id=tc.get("id", f"call_{uuid.uuid4().hex[:8]}"),
                     type="function",
                     function=FunctionCall(
                         name=tc["name"],
-                        arguments=tc["arguments"],
+                        arguments=_coerce_tool_arguments(
+                            tc["arguments"], tc["name"], tools
+                        ),
                     ),
                 )
                 for tc in result.tool_calls
@@ -3492,6 +3582,9 @@ async def stream_chat_completion(
     tool_accumulated_text = ""
     tool_calls_detected = False
     tool_markup_possible = False  # Fast path: skip parsing until '<' seen
+    tools_for_schema_coercion = (
+        request.model_dump().get("tools") if request and request.tools else None
+    )
     if _enable_auto_tool_choice and _tool_call_parser:
         # Initialize parser if needed (same as _parse_tool_calls_with_parser)
         if _tool_parser_instance is None:
@@ -3546,8 +3639,12 @@ async def stream_chat_completion(
             return None, None, True
 
         if "tool_calls" in tool_result:
+            coerced_tool_calls = [
+                _coerce_tool_call_delta_arguments(tc, tools_for_schema_coercion)
+                for tc in tool_result["tool_calls"]
+            ]
             filtered_tool_calls = _apply_tool_call_spray_policy_to_deltas(
-                tool_result["tool_calls"],
+                coerced_tool_calls,
                 source="stream-parser",
             )
             if filtered_tool_calls:
@@ -3658,8 +3755,12 @@ async def stream_chat_completion(
     if tool_parser and tool_accumulated_text and not tool_calls_detected and tool_markup_possible:
         result = tool_parser.extract_tool_calls(tool_accumulated_text)
         if result.tools_called:
+            tool_calls_with_coercion = [
+                _coerce_tool_call_delta_arguments(tc, tools_for_schema_coercion)
+                for tc in result.tool_calls
+            ]
             tool_call_deltas = _apply_tool_call_spray_policy_to_deltas(
-                result.tool_calls,
+                tool_calls_with_coercion,
                 source="stream-fallback",
             )
             tool_chunk = ChatCompletionChunk(
