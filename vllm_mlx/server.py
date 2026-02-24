@@ -111,6 +111,7 @@ from .api.utils import (
     is_mllm_model,  # noqa: F401
 )
 from .engine import BaseEngine, BatchedEngine, GenerationOutput, SimpleEngine
+from .runtime_mode import save_observed_peak_concurrency
 from .tool_parsers import ToolParserManager
 
 logging.basicConfig(level=logging.INFO)
@@ -126,6 +127,35 @@ _default_top_p: float | None = None  # Set via --default-top-p
 
 _FALLBACK_TEMPERATURE = 0.7
 _FALLBACK_TOP_P = 0.9
+
+
+class ConcurrencyTracker:
+    """Track active and peak concurrent inference requests."""
+
+    def __init__(self) -> None:
+        self._active = 0
+        self._peak = 0
+        self._lock = threading.Lock()
+
+    def enter(self) -> None:
+        with self._lock:
+            self._active += 1
+            if self._active > self._peak:
+                self._peak = self._active
+
+    def exit(self) -> None:
+        with self._lock:
+            if self._active > 0:
+                self._active -= 1
+
+    def snapshot(self) -> tuple[int, int]:
+        with self._lock:
+            return self._active, self._peak
+
+    @property
+    def peak(self) -> int:
+        with self._lock:
+            return self._peak
 
 
 def _resolve_temperature(request_value: float | None) -> float:
@@ -165,6 +195,18 @@ _reasoning_parser = None  # ReasoningParser instance when enabled
 _enable_auto_tool_choice: bool = False
 _tool_call_parser: str | None = None  # Parser name: auto, mistral, qwen, llama, hermes
 _tool_parser_instance = None  # Instantiated parser
+_concurrency_tracker = ConcurrencyTracker()
+
+_CONCURRENCY_TRACKED_PATHS = (
+    "/v1/chat/completions",
+    "/v1/completions",
+    "/v1/messages",
+    "/v1/embeddings",
+)
+
+
+def _should_track_concurrency(path: str) -> bool:
+    return any(path.startswith(prefix) for prefix in _CONCURRENCY_TRACKED_PATHS)
 
 
 def _load_prefix_cache_from_disk() -> None:
@@ -234,6 +276,23 @@ async def lifespan(app: FastAPI):
     if _engine is not None and hasattr(_engine, "save_cache_to_disk"):
         _save_prefix_cache_to_disk()
 
+    # Persist observed concurrency profile for next startup mode selection.
+    peak_concurrency = _concurrency_tracker.peak
+    if peak_concurrency > 0:
+        try:
+            profile = save_observed_peak_concurrency(peak_concurrency)
+            logger.info(
+                "[lifespan] Persisted concurrency profile: last_run_peak=%s observed_peak=%s",
+                profile.get("last_run_peak_concurrency"),
+                profile.get("observed_peak_concurrency"),
+            )
+        except Exception as e:
+            logger.warning(
+                "[lifespan] Failed to persist concurrency profile: %s",
+                e,
+                exc_info=True,
+            )
+
     # Shutdown: Close MCP connections and stop engine
     if _mcp_manager is not None:
         await _mcp_manager.stop()
@@ -249,6 +308,21 @@ app = FastAPI(
     version="0.2.1",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def track_runtime_concurrency(request: Request, call_next):
+    """Track concurrency for high-impact inference endpoints."""
+    should_track = _should_track_concurrency(request.url.path)
+    if should_track:
+        _concurrency_tracker.enter()
+    try:
+        response = await call_next(request)
+    finally:
+        if should_track:
+            _concurrency_tracker.exit()
+    return response
+
 
 security = HTTPBearer(auto_error=False)
 api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
@@ -638,6 +712,7 @@ async def status():
         return {"status": "not_loaded", "model": None, "requests": []}
 
     stats = _engine.get_stats()
+    active_concurrency, peak_concurrency = _concurrency_tracker.snapshot()
 
     return {
         "status": "running" if stats.get("running") else "stopped",
@@ -657,6 +732,10 @@ async def status():
         "cache": stats.get("memory_aware_cache")
         or stats.get("paged_cache")
         or stats.get("prefix_cache"),
+        "runtime": {
+            "active_concurrency": active_concurrency,
+            "peak_concurrency": peak_concurrency,
+        },
         "requests": stats.get("requests", []),
     }
 

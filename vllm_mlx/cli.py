@@ -14,11 +14,149 @@ Usage:
 
 import argparse
 import sys
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class CacheProfile:
+    """Resolved cache configuration after applying CLI policy."""
+
+    enable_prefix_cache: bool
+    use_memory_aware_cache: bool
+    use_paged_cache: bool
+    strategy_label: str
 
 
 def _resolve_bind_host(host: str, localhost: bool) -> str:
     """Resolve bind host with localhost profile precedence."""
     return "127.0.0.1" if localhost else host
+
+
+def _is_localhost(bind_host: str) -> bool:
+    normalized = bind_host.strip().lower()
+    return normalized in {"127.0.0.1", "localhost", "::1"}
+
+
+def _build_startup_diagnostics(
+    *,
+    bind_host: str,
+    api_key: str | None,
+    rate_limit: int,
+    runtime_mode: str,
+    cache_profile: CacheProfile | None = None,
+) -> list[str]:
+    """Build operator-facing startup diagnostics for risky local configurations."""
+    diagnostics: list[str] = []
+    local_only = _is_localhost(bind_host)
+    auth_enabled = bool(api_key)
+    rate_limit_enabled = rate_limit > 0
+
+    if not local_only and not auth_enabled:
+        diagnostics.append(
+            "WARN: Server is exposed on a non-localhost bind without API key auth."
+        )
+    if not local_only and not rate_limit_enabled:
+        diagnostics.append(
+            "WARN: Server is exposed on a non-localhost bind with rate limiting disabled."
+        )
+    if auth_enabled and not rate_limit_enabled:
+        diagnostics.append(
+            "WARN: Authentication enabled but rate limiting is disabled; abusive clients can still saturate the server."
+        )
+    if rate_limit_enabled and not auth_enabled:
+        diagnostics.append(
+            "WARN: Rate limiting enabled without API keys; client identity falls back to IP and may be coarse."
+        )
+    if rate_limit_enabled and rate_limit < 5:
+        diagnostics.append(
+            f"WARN: Very low rate limit configured ({rate_limit} req/min); clients may observe frequent 429s."
+        )
+    if local_only and not auth_enabled:
+        diagnostics.append(
+            "INFO: Localhost-only mode with auth disabled is acceptable for single-user local development."
+        )
+    if runtime_mode == "simple":
+        diagnostics.append(
+            "INFO: Runtime mode is simple; monitor peak concurrency and switch to batched if queueing appears."
+        )
+    if runtime_mode == "batched":
+        diagnostics.append(
+            "INFO: Runtime mode is batched; expect higher overhead for strictly single-user traffic."
+        )
+    if cache_profile is not None:
+        diagnostics.append(
+            "INFO: Cache strategy resolved to "
+            f"{cache_profile.strategy_label} "
+            f"(prefix={cache_profile.enable_prefix_cache}, "
+            f"memory_aware={cache_profile.use_memory_aware_cache}, "
+            f"paged={cache_profile.use_paged_cache})."
+        )
+        if cache_profile.enable_prefix_cache:
+            diagnostics.append(
+                "INFO: Warm-cache guidance: send a representative request after startup to seed cache entries."
+            )
+
+    return diagnostics
+
+
+def _resolve_cache_profile(args, use_batching: bool) -> CacheProfile:
+    """
+    Resolve cache behavior from explicit flags plus cache strategy policy.
+
+    Strategy precedence:
+    1) explicit cache strategy
+    2) auto strategy heuristic
+    3) explicit cache flags
+    """
+    enable_prefix_cache = args.enable_prefix_cache and not args.disable_prefix_cache
+    use_memory_aware_cache = not args.no_memory_aware_cache
+    use_paged_cache = args.use_paged_cache
+    strategy_label = args.cache_strategy
+
+    if args.cache_strategy == "legacy":
+        enable_prefix_cache = True
+        use_memory_aware_cache = False
+        use_paged_cache = False
+    elif args.cache_strategy == "memory-aware":
+        enable_prefix_cache = True
+        use_memory_aware_cache = True
+        use_paged_cache = False
+    elif args.cache_strategy == "paged":
+        enable_prefix_cache = True
+        use_memory_aware_cache = False
+        use_paged_cache = True
+    elif args.cache_strategy == "auto":
+        if not enable_prefix_cache:
+            use_memory_aware_cache = False
+            use_paged_cache = False
+            strategy_label = "auto->disabled"
+        elif use_paged_cache:
+            use_memory_aware_cache = False
+            strategy_label = "auto->explicit-paged"
+        elif use_batching and args.max_num_seqs >= 128:
+            use_memory_aware_cache = False
+            use_paged_cache = True
+            strategy_label = "auto->paged(max_num_seqs>=128)"
+        elif use_memory_aware_cache:
+            strategy_label = "auto->memory-aware"
+        else:
+            strategy_label = "auto->legacy"
+    else:
+        raise ValueError(f"Unsupported cache strategy: {args.cache_strategy!r}")
+
+    if not enable_prefix_cache:
+        use_memory_aware_cache = False
+        use_paged_cache = False
+
+    if use_paged_cache:
+        use_memory_aware_cache = False
+
+    return CacheProfile(
+        enable_prefix_cache=enable_prefix_cache,
+        use_memory_aware_cache=use_memory_aware_cache,
+        use_paged_cache=use_paged_cache,
+        strategy_label=strategy_label,
+    )
 
 
 def serve_command(args):
@@ -30,6 +168,7 @@ def serve_command(args):
     import uvicorn
 
     # Import unified server
+    from .runtime_mode import load_observed_peak_concurrency, select_runtime_mode
     from . import server
     from .scheduler import SchedulerConfig
     from .server import RateLimiter, app, load_model
@@ -40,6 +179,12 @@ def serve_command(args):
     if args.enable_auto_tool_choice and not args.tool_call_parser:
         print("Error: --enable-auto-tool-choice requires --tool-call-parser")
         print("Example: --enable-auto-tool-choice --tool-call-parser mistral")
+        sys.exit(1)
+    if args.runtime_mode_threshold < 1:
+        print("Error: --runtime-mode-threshold must be >= 1")
+        sys.exit(1)
+    if args.mllm_vision_cache_size < 1:
+        print("Error: --mllm-vision-cache-size must be >= 1")
         sys.exit(1)
 
     # Configure server security settings
@@ -87,6 +232,17 @@ def serve_command(args):
     else:
         server._reasoning_parser = None
 
+    bind_host = _resolve_bind_host(args.host, args.localhost)
+    observed_peak = load_observed_peak_concurrency()
+    use_batching, runtime_mode_reason = select_runtime_mode(
+        requested_mode=args.runtime_mode,
+        continuous_batching_flag=args.continuous_batching,
+        observed_peak=observed_peak,
+        threshold=args.runtime_mode_threshold,
+    )
+    runtime_mode = "batched" if use_batching else "simple"
+    cache_profile = _resolve_cache_profile(args, use_batching=use_batching)
+
     # Security summary at startup
     print("=" * 60)
     print("SECURITY CONFIGURATION")
@@ -108,6 +264,7 @@ def serve_command(args):
         print(f"  Reasoning: ENABLED (parser: {args.reasoning_parser})")
     else:
         print("  Reasoning: Use --reasoning-parser to enable")
+    print(f"  Runtime mode: {runtime_mode} ({runtime_mode_reason})")
     print("=" * 60)
 
     print(f"Loading model: {args.model}")
@@ -124,26 +281,21 @@ def serve_command(args):
         server.load_embedding_model(args.embedding_model, lock=True)
         print(f"Embedding model loaded: {args.embedding_model}")
 
-    bind_host = _resolve_bind_host(args.host, args.localhost)
-
     # Build scheduler config for batched mode
     scheduler_config = None
-    if args.continuous_batching:
-        # Handle prefix cache flags
-        enable_prefix_cache = args.enable_prefix_cache and not args.disable_prefix_cache
-
+    if use_batching:
         scheduler_config = SchedulerConfig(
             max_num_seqs=args.max_num_seqs,
             prefill_batch_size=args.prefill_batch_size,
             completion_batch_size=args.completion_batch_size,
-            enable_prefix_cache=enable_prefix_cache,
+            enable_prefix_cache=cache_profile.enable_prefix_cache,
             prefix_cache_size=args.prefix_cache_size,
             # Memory-aware cache options
-            use_memory_aware_cache=not args.no_memory_aware_cache,
+            use_memory_aware_cache=cache_profile.use_memory_aware_cache,
             cache_memory_mb=args.cache_memory_mb,
             cache_memory_percent=args.cache_memory_percent,
             # Paged cache options
-            use_paged_cache=args.use_paged_cache,
+            use_paged_cache=cache_profile.use_paged_cache,
             paged_cache_block_size=args.paged_cache_block_size,
             max_cache_blocks=args.max_cache_blocks,
             # Chunked prefill
@@ -157,6 +309,9 @@ def serve_command(args):
             kv_cache_quantization_bits=args.kv_cache_quantization_bits,
             kv_cache_quantization_group_size=args.kv_cache_quantization_group_size,
             kv_cache_min_quantize_tokens=args.kv_cache_min_quantize_tokens,
+            # MLLM cache settings
+            enable_vision_cache=not args.disable_mllm_vision_cache,
+            vision_cache_size=args.mllm_vision_cache_size,
         )
 
         print("Mode: Continuous batching (for multiple concurrent users)")
@@ -165,11 +320,11 @@ def serve_command(args):
         if args.enable_mtp:
             print(f"MTP: enabled, draft_tokens={args.mtp_num_draft_tokens}")
         print(f"Stream interval: {args.stream_interval} tokens")
-        if args.use_paged_cache:
+        if cache_profile.use_paged_cache:
             print(
                 f"Paged cache: block_size={args.paged_cache_block_size}, max_blocks={args.max_cache_blocks}"
             )
-        elif enable_prefix_cache and not args.no_memory_aware_cache:
+        elif cache_profile.enable_prefix_cache and cache_profile.use_memory_aware_cache:
             cache_info = (
                 f"{args.cache_memory_mb}MB"
                 if args.cache_memory_mb
@@ -181,17 +336,36 @@ def serve_command(args):
                     f"KV cache quantization: {args.kv_cache_quantization_bits}-bit, "
                     f"group_size={args.kv_cache_quantization_group_size}"
                 )
-        elif enable_prefix_cache:
+        elif cache_profile.enable_prefix_cache:
             print(f"Prefix cache: max_entries={args.prefix_cache_size}")
+        if args.mllm_vision_cache_size != 100 or args.disable_mllm_vision_cache:
+            print(
+                f"MLLM vision cache: enabled={not args.disable_mllm_vision_cache}, "
+                f"size={args.mllm_vision_cache_size}"
+            )
     else:
         print("Mode: Simple (maximum throughput)")
+
+    diagnostics = _build_startup_diagnostics(
+        bind_host=bind_host,
+        api_key=args.api_key,
+        rate_limit=args.rate_limit,
+        runtime_mode=runtime_mode,
+        cache_profile=cache_profile if use_batching else None,
+    )
+    for diagnostic in diagnostics:
+        print(f"  {diagnostic}")
+        if diagnostic.startswith("WARN:"):
+            logger.warning(diagnostic)
+        elif diagnostic.startswith("INFO:"):
+            logger.info(diagnostic)
 
     # Load model with unified server
     load_model(
         args.model,
-        use_batching=args.continuous_batching,
+        use_batching=use_batching,
         scheduler_config=scheduler_config,
-        stream_interval=args.stream_interval if args.continuous_batching else 1,
+        stream_interval=args.stream_interval if use_batching else 1,
         max_tokens=args.max_tokens,
         force_mllm=args.mllm,
     )
@@ -689,9 +863,29 @@ Examples:
         help="Default max tokens for generation (default: 32768)",
     )
     serve_parser.add_argument(
+        "--runtime-mode",
+        type=str,
+        default="auto",
+        choices=["auto", "simple", "batched"],
+        help="Runtime engine mode policy: auto (from observed concurrency), simple, or batched.",
+    )
+    serve_parser.add_argument(
+        "--runtime-mode-threshold",
+        type=int,
+        default=2,
+        help="Peak concurrency threshold for selecting batched mode when --runtime-mode=auto (default: 2).",
+    )
+    serve_parser.add_argument(
         "--continuous-batching",
         action="store_true",
-        help="Enable continuous batching for multiple concurrent users (slower for single user)",
+        help="Legacy override to force batched mode (equivalent to --runtime-mode batched in auto mode).",
+    )
+    serve_parser.add_argument(
+        "--cache-strategy",
+        type=str,
+        default="auto",
+        choices=["auto", "memory-aware", "paged", "legacy"],
+        help="Cache strategy policy for batched mode. Auto chooses based on concurrency profile and max-num-seqs.",
     )
     # Paged cache options (experimental)
     serve_parser.add_argument(
@@ -818,6 +1012,17 @@ Examples:
         "--mllm",
         action="store_true",
         help="Force load model as multimodal (vision) even if name doesn't match auto-detection patterns",
+    )
+    serve_parser.add_argument(
+        "--disable-mllm-vision-cache",
+        action="store_true",
+        help="Disable MLLM vision embedding cache in batched multimodal mode.",
+    )
+    serve_parser.add_argument(
+        "--mllm-vision-cache-size",
+        type=int,
+        default=100,
+        help="Maximum entries for MLLM vision embedding cache in batched multimodal mode (default: 100).",
     )
     # Generation defaults
     serve_parser.add_argument(

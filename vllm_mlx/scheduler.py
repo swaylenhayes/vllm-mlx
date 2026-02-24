@@ -101,6 +101,10 @@ class SchedulerConfig:
     mtp_num_draft_tokens: int = 1  # Number of draft tokens from MTP head
     mtp_optimistic: bool = False  # Skip acceptance check for max speed
 
+    # MLLM vision embedding cache settings (used by batched multimodal engine)
+    enable_vision_cache: bool = True
+    vision_cache_size: int = 100
+
 
 @dataclass
 class SchedulerOutput:

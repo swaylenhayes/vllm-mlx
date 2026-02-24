@@ -218,13 +218,17 @@ class BatchedEngine(BaseEngine):
         completion_batch_size = getattr(
             self._scheduler_config, "completion_batch_size", 16
         )
+        enable_vision_cache = getattr(
+            self._scheduler_config, "enable_vision_cache", True
+        )
+        vision_cache_size = getattr(self._scheduler_config, "vision_cache_size", 100)
 
         mllm_config = MLLMSchedulerConfig(
             max_num_seqs=max_num_seqs,
             prefill_batch_size=prefill_batch_size,
             completion_batch_size=completion_batch_size,
-            enable_vision_cache=True,
-            vision_cache_size=100,
+            enable_vision_cache=enable_vision_cache,
+            vision_cache_size=vision_cache_size,
         )
 
         # Create and start MLLM scheduler
@@ -238,7 +242,8 @@ class BatchedEngine(BaseEngine):
         logger.info(
             f"MLLM Scheduler started with continuous batching: "
             f"max_num_seqs={max_num_seqs}, prefill_batch={prefill_batch_size}, "
-            f"completion_batch={completion_batch_size}"
+            f"completion_batch={completion_batch_size}, "
+            f"vision_cache={enable_vision_cache}, vision_cache_size={vision_cache_size}"
         )
 
     async def _start_llm(self) -> None:

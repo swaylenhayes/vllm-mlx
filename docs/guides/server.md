@@ -38,10 +38,15 @@ vllm-mlx serve mlx-community/Llama-3.2-3B-Instruct-4bit --port 8000 --continuous
 | `--api-key` | API key for authentication | None |
 | `--rate-limit` | Requests per minute per client (0 = disabled) | 0 |
 | `--timeout` | Request timeout in seconds | 300 |
-| `--continuous-batching` | Enable batching for multi-user | False |
+| `--runtime-mode` | Runtime mode policy (`auto`, `simple`, `batched`) | auto |
+| `--runtime-mode-threshold` | Auto mode threshold for selecting batched mode | 2 |
+| `--continuous-batching` | Legacy override to force batched runtime mode | False |
+| `--cache-strategy` | Cache strategy policy (`auto`, `memory-aware`, `paged`, `legacy`) | auto |
 | `--use-paged-cache` | Enable paged KV cache | False |
 | `--cache-memory-mb` | Cache memory limit in MB | Auto |
 | `--cache-memory-percent` | Fraction of RAM for cache | 0.20 |
+| `--disable-mllm-vision-cache` | Disable batched multimodal vision embedding cache | False |
+| `--mllm-vision-cache-size` | Batched multimodal vision cache entries | 100 |
 | `--max-tokens` | Default max tokens | 32768 |
 | `--default-temperature` | Default temperature when not specified | None |
 | `--default-top-p` | Default top_p when not specified | None |
@@ -509,6 +514,8 @@ Response fields:
 | `metal.peak_memory_gb` | Peak Metal GPU memory usage (GB) |
 | `metal.cache_memory_gb` | Metal cache memory usage (GB) |
 | `cache` | Cache statistics (type, entries, hit rate, memory usage) |
+| `runtime.active_concurrency` | Current number of tracked inference requests in flight |
+| `runtime.peak_concurrency` | Peak tracked inference concurrency since startup |
 | `requests` | List of active requests with per-request details |
 
 Per-request fields in `requests`:
