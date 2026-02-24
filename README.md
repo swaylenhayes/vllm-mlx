@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Apple Silicon](https://img.shields.io/badge/Apple-Silicon-black.svg)](https://support.apple.com/en-us/HT211814)
-[![GitHub](https://img.shields.io/badge/GitHub-waybarrios%2Fvllm--mlx-blue?logo=github)](https://github.com/waybarrios/vllm-mlx)
+[![GitHub](https://img.shields.io/badge/GitHub-swaylenhayes%2Fvllm--mlx-blue?logo=github)](https://github.com/swaylenhayes/vllm-mlx)
 
 ## Focus of this fork
 
@@ -42,6 +42,51 @@ Delta summary:
 
 Detailed benchmark snapshots are stored in `benchmarks/phase-results/`.
 
+### What the fork fixes (compatibility impact)
+
+The phase table above covers speed. The fork also changed model usability and runtime behavior.
+
+| Area | Upstream behavior seen in re-eval | Fork behavior | Practical impact |
+|---|---|---|---|
+| Single-user runtime path | Batched path could produce runaway generation on some models | `--runtime-mode auto` selects simple engine for single-user usage | Cleaner EOS/stop behavior for affected models |
+| Thinking-model output | `<think>...</think>` could interfere with downstream parsing | Reasoning parser flow hardened; parser ordering fixed | Cleaner assistant content and better tool extraction |
+| LiquidAI/WaveCut tool calls | LiquidAI format not recognized | Added parser: `liquidai` / `liquid` / `lfm` | Structured `tool_calls` can now be extracted |
+| Decode controls | No OpenAI-style frequency control | Added `frequency_penalty` mapping to repetition penalty | Frontend can tune repetition behavior consistently |
+
+Serve profile used for local reliability work:
+
+```bash
+vllm-mlx serve <model-id> \
+  --localhost \
+  --runtime-mode auto \
+  --cache-strategy auto
+```
+
+For thinking models:
+
+```bash
+vllm-mlx serve <model-id> \
+  --localhost --runtime-mode auto --cache-strategy auto \
+  --reasoning-parser qwen3
+```
+
+For LiquidAI/WaveCut tool-calling models:
+
+```bash
+vllm-mlx serve <model-id> \
+  --localhost --runtime-mode auto --cache-strategy auto \
+  --enable-auto-tool-choice --tool-call-parser liquidai
+```
+
+Latest shipped fork update (not yet reflected in the phase throughput table): `d890ef6`
+
+- Adds LiquidAI tool parser support.
+- Adds `--max-thinking-tokens` and request-level `max_thinking_tokens`.
+- Fixes reasoning/tool parser order in streaming and non-streaming paths.
+
+Detailed model compatibility notes and re-evaluation summary:
+- [`docs/benchmarks/fork-benefits.md`](docs/benchmarks/fork-benefits.md)
+
 ## Overview
 
 vllm-mlx brings native Apple Silicon GPU acceleration to vLLM by integrating:
@@ -73,20 +118,20 @@ vllm-mlx brings native Apple Silicon GPU acceleration to vLLM by integrating:
 
 ```bash
 # Install as CLI tool (system-wide)
-uv tool install git+https://github.com/waybarrios/vllm-mlx.git
+uv tool install git+https://github.com/swaylenhayes/vllm-mlx.git
 
 # Or install in a project/virtual environment
-uv pip install git+https://github.com/waybarrios/vllm-mlx.git
+uv pip install git+https://github.com/swaylenhayes/vllm-mlx.git
 ```
 
 **Using pip:**
 
 ```bash
 # Install from GitHub
-pip install git+https://github.com/waybarrios/vllm-mlx.git
+pip install git+https://github.com/swaylenhayes/vllm-mlx.git
 
 # Or clone and install in development mode
-git clone https://github.com/waybarrios/vllm-mlx.git
+git clone https://github.com/swaylenhayes/vllm-mlx.git
 cd vllm-mlx
 pip install -e .
 ```
@@ -406,7 +451,7 @@ We welcome contributions! See [Contributing Guide](docs/development/contributing
 - Documentation improvements
 - Benchmarks on different Apple Silicon chips
 
-Submit PRs to: [https://github.com/waybarrios/vllm-mlx](https://github.com/waybarrios/vllm-mlx)
+Submit PRs to: [https://github.com/swaylenhayes/vllm-mlx](https://github.com/swaylenhayes/vllm-mlx)
 
 ## License
 

@@ -7,6 +7,7 @@ Performance benchmarks for vllm-mlx on Apple Silicon.
 - [LLM Benchmarks](llm.md) - Text generation performance
 - [Image Benchmarks](image.md) - Image understanding performance
 - [Video Benchmarks](video.md) - Video understanding performance
+- [Fork Benefits](fork-benefits.md) - Compatibility and reliability outcomes from fork changes
 
 ## Quick Commands
 
