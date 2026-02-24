@@ -629,6 +629,133 @@ class TestAPIKeyVerification:
         finally:
             server._api_key = original_key
 
+    def test_verify_api_key_accepts_valid_x_api_key(self):
+        """Test that valid x-api-key header value is accepted."""
+        import asyncio
+
+        import vllm_mlx.server as server
+
+        original_key = server._api_key
+
+        try:
+            server._api_key = "valid-secret-key"
+
+            result = asyncio.get_event_loop().run_until_complete(
+                server.verify_api_key(None, "valid-secret-key")
+            )
+            assert result is True or result is None
+        finally:
+            server._api_key = original_key
+
+    def test_verify_api_key_rejects_invalid_x_api_key(self):
+        """Test that invalid x-api-key header value is rejected."""
+        import asyncio
+        from fastapi import HTTPException
+
+        import vllm_mlx.server as server
+
+        original_key = server._api_key
+
+        try:
+            server._api_key = "valid-secret-key"
+
+            with pytest.raises(HTTPException) as exc_info:
+                asyncio.get_event_loop().run_until_complete(
+                    server.verify_api_key(None, "invalid-key")
+                )
+
+            assert exc_info.value.status_code == 401
+            assert "Invalid API key" in str(exc_info.value.detail)
+        finally:
+            server._api_key = original_key
+
+
+class TestAuthHeaderCompatibility:
+    """Test API key extraction compatibility for supported header styles."""
+
+    def test_extract_api_key_prefers_bearer_authorization(self):
+        """Bearer token should win when both auth headers are provided."""
+        from vllm_mlx.server import _extract_api_key_from_headers
+
+        api_key = _extract_api_key_from_headers(
+            "Bearer bearer-token", "x-api-key-token"
+        )
+        assert api_key == "bearer-token"
+
+    def test_extract_api_key_uses_x_api_key_when_bearer_missing(self):
+        """x-api-key should be accepted when Authorization is absent."""
+        from vllm_mlx.server import _extract_api_key_from_headers
+
+        api_key = _extract_api_key_from_headers(None, "x-api-key-token")
+        assert api_key == "x-api-key-token"
+
+
+class TestRouteSecurityCoverage:
+    """Test route-level auth and rate-limit dependency coverage."""
+
+    def test_anthropic_routes_require_auth_and_rate_limit(self):
+        """Anthropic routes should mirror security dependencies used by chat routes."""
+        from fastapi.routing import APIRoute
+
+        import vllm_mlx.server as server
+
+        target_paths = {"/v1/messages", "/v1/messages/count_tokens"}
+        found_paths = set()
+
+        for route in server.app.routes:
+            if isinstance(route, APIRoute) and route.path in target_paths:
+                dependency_calls = {dep.call for dep in route.dependant.dependencies}
+                assert server.verify_api_key in dependency_calls
+                assert server.check_rate_limit in dependency_calls
+                found_paths.add(route.path)
+
+        assert found_paths == target_paths
+
+    def test_capabilities_route_requires_auth(self):
+        """Capabilities route should require API key when auth is enabled."""
+        from fastapi.routing import APIRoute
+
+        import vllm_mlx.server as server
+
+        route = next(
+            r
+            for r in server.app.routes
+            if isinstance(r, APIRoute) and r.path == "/v1/capabilities"
+        )
+        dependency_calls = {dep.call for dep in route.dependant.dependencies}
+        assert server.verify_api_key in dependency_calls
+
+
+class TestCapabilitiesEndpoint:
+    """Test runtime capabilities contract."""
+
+    def test_capabilities_response_contract(self):
+        """Capabilities endpoint should return stable core fields."""
+        import asyncio
+
+        import vllm_mlx.server as server
+
+        result = asyncio.get_event_loop().run_until_complete(server.get_capabilities())
+
+        assert result.object == "capabilities"
+        assert isinstance(result.model_loaded, bool)
+        assert result.model_type in {"llm", "mllm", None}
+
+        assert isinstance(result.modalities.text, bool)
+        assert isinstance(result.modalities.image, bool)
+        assert isinstance(result.modalities.video, bool)
+        assert isinstance(result.modalities.audio_input, bool)
+        assert isinstance(result.modalities.audio_output, bool)
+
+        assert result.features.streaming is True
+        assert result.features.structured_output is True
+        assert result.features.anthropic_messages is True
+        assert "authorization" in result.auth.accepted_headers
+        assert "x-api-key" in result.auth.accepted_headers
+
+        assert result.limits.default_max_tokens > 0
+        assert result.limits.default_timeout_seconds > 0
+
 
 class TestRateLimiterHTTPResponse:
     """Test rate limiter HTTP response behavior."""

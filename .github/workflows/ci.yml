@@ -79,6 +79,8 @@ jobs:
             tests/test_mllm_cache.py \
             tests/test_api_models.py \
             tests/test_api_utils.py \
+            tests/test_cli_localhost.py \
+            tests/test_docs_drift.py \
             tests/test_request.py \
             tests/test_anthropic_models.py \
             tests/test_anthropic_adapter.py \

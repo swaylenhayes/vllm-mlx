@@ -16,6 +16,11 @@ import argparse
 import sys
 
 
+def _resolve_bind_host(host: str, localhost: bool) -> str:
+    """Resolve bind host with localhost profile precedence."""
+    return "127.0.0.1" if localhost else host
+
+
 def serve_command(args):
     """Start the OpenAI-compatible server."""
     import logging
@@ -119,6 +124,8 @@ def serve_command(args):
         server.load_embedding_model(args.embedding_model, lock=True)
         print(f"Embedding model loaded: {args.embedding_model}")
 
+    bind_host = _resolve_bind_host(args.host, args.localhost)
+
     # Build scheduler config for batched mode
     scheduler_config = None
     if args.continuous_batching:
@@ -190,8 +197,8 @@ def serve_command(args):
     )
 
     # Start server
-    print(f"Starting server at http://{args.host}:{args.port}")
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    print(f"Starting server at http://{bind_host}:{args.port}")
+    uvicorn.run(app, host=bind_host, port=args.port, log_level="info")
 
 
 def bench_command(args):
@@ -593,6 +600,11 @@ Examples:
     serve_parser.add_argument("model", type=str, help="Model to serve")
     serve_parser.add_argument(
         "--host", type=str, default="0.0.0.0", help="Host to bind"
+    )
+    serve_parser.add_argument(
+        "--localhost",
+        action="store_true",
+        help="Bind server to localhost only (127.0.0.1). Overrides --host.",
     )
     serve_parser.add_argument("--port", type=int, default=8000, help="Port to bind")
     serve_parser.add_argument(

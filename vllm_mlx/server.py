@@ -39,6 +39,7 @@ The server provides:
 
 import argparse
 import asyncio
+import importlib.util
 import json
 import logging
 import os
@@ -49,11 +50,12 @@ import time
 import uuid
 from collections import defaultdict
 from collections.abc import AsyncIterator
+from typing import Annotated
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 
 # Import from new modular API
 # Re-export for backwards compatibility with tests
@@ -61,6 +63,12 @@ from .api.anthropic_adapter import anthropic_to_openai, openai_to_anthropic
 from .api.anthropic_models import AnthropicRequest
 from .api.models import (
     AssistantMessage,  # noqa: F401
+    CapabilitiesResponse,
+    CapabilityAuth,
+    CapabilityFeatures,
+    CapabilityLimits,
+    CapabilityModalities,
+    CapabilityRateLimit,
     ChatCompletionChoice,  # noqa: F401
     ChatCompletionChunk,  # noqa: F401
     ChatCompletionChunkChoice,  # noqa: F401
@@ -243,6 +251,43 @@ app = FastAPI(
 )
 
 security = HTTPBearer(auto_error=False)
+api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
+
+
+def _normalize_api_key(value: str | None) -> str | None:
+    """Normalize API key value from headers/credentials."""
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _extract_bearer_token(authorization_header: str | None) -> str | None:
+    """Extract bearer token from Authorization header."""
+    if not isinstance(authorization_header, str):
+        return None
+
+    parts = authorization_header.strip().split(maxsplit=1)
+    if len(parts) != 2:
+        return None
+
+    scheme, token = parts
+    if scheme.lower() != "bearer":
+        return None
+
+    return _normalize_api_key(token)
+
+
+def _extract_api_key_from_headers(
+    authorization_header: str | None,
+    x_api_key: str | None,
+) -> str | None:
+    """Extract API key from supported auth headers."""
+    bearer_token = _extract_bearer_token(authorization_header)
+    if bearer_token:
+        return bearer_token
+
+    return _normalize_api_key(x_api_key)
 
 
 class RateLimiter:
@@ -292,9 +337,15 @@ _rate_limiter = RateLimiter(requests_per_minute=60, enabled=False)
 
 async def check_rate_limit(request: Request):
     """Rate limiting dependency."""
-    # Use API key as client ID if available, otherwise use IP
-    client_id = request.headers.get(
-        "Authorization", request.client.host if request.client else "unknown"
+    # Use normalized API key as client ID when available, otherwise use IP.
+    request_api_key = _extract_api_key_from_headers(
+        request.headers.get("Authorization"),
+        request.headers.get("x-api-key"),
+    )
+    client_id = (
+        f"api-key:{request_api_key}"
+        if request_api_key
+        else (request.client.host if request.client else "unknown")
     )
 
     allowed, retry_after = _rate_limiter.is_allowed(client_id)
@@ -306,7 +357,12 @@ async def check_rate_limit(request: Request):
         )
 
 
-async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def verify_api_key(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(security)
+    ] = None,
+    x_api_key: Annotated[str | None, Depends(api_key_header)] = None,
+):
     """Verify API key if authentication is enabled."""
     global _auth_warning_logged
 
@@ -320,10 +376,18 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(sec
             _auth_warning_logged = True
         return True  # No auth required
 
-    if credentials is None:
+    provided_api_key = _normalize_api_key(
+        credentials.credentials
+        if isinstance(credentials, HTTPAuthorizationCredentials)
+        else None
+    )
+    if provided_api_key is None:
+        provided_api_key = _normalize_api_key(x_api_key)
+
+    if provided_api_key is None:
         raise HTTPException(status_code=401, detail="API key required")
     # Use constant-time comparison to prevent timing attacks
-    if not secrets.compare_digest(credentials.credentials, _api_key):
+    if not secrets.compare_digest(provided_api_key, _api_key):
         raise HTTPException(status_code=401, detail="Invalid API key")
     return True
 
@@ -534,6 +598,11 @@ def get_usage(output: GenerationOutput) -> Usage:
     )
 
 
+def _module_available(module_name: str) -> bool:
+    """Check whether a Python module can be imported in this runtime."""
+    return importlib.util.find_spec(module_name) is not None
+
+
 @app.get("/health")
 async def health():
     """Health check endpoint."""
@@ -637,6 +706,51 @@ async def list_models() -> ModelsResponse:
     if _model_name:
         models.append(ModelInfo(id=_model_name))
     return ModelsResponse(data=models)
+
+
+@app.get("/v1/capabilities", dependencies=[Depends(verify_api_key)])
+async def get_capabilities() -> CapabilitiesResponse:
+    """Return current runtime capabilities for client feature negotiation."""
+    model_loaded = _engine is not None
+    model_is_mllm = bool(_engine and _engine.is_mllm)
+    model_type = "mllm" if model_is_mllm else ("llm" if model_loaded else None)
+
+    audio_available = _module_available("mlx_audio")
+    embeddings_available = _module_available("mlx_embeddings")
+
+    return CapabilitiesResponse(
+        model_loaded=model_loaded,
+        model_name=_model_name,
+        model_type=model_type,
+        modalities=CapabilityModalities(
+            text=model_loaded,
+            image=model_is_mllm,
+            video=model_is_mllm,
+            audio_input=audio_available,
+            audio_output=audio_available,
+        ),
+        features=CapabilityFeatures(
+            streaming=True,
+            tool_calling=model_loaded,
+            auto_tool_choice=_enable_auto_tool_choice,
+            structured_output=True,
+            reasoning=_reasoning_parser is not None,
+            embeddings=embeddings_available,
+            anthropic_messages=True,
+            mcp=_mcp_manager is not None,
+        ),
+        auth=CapabilityAuth(api_key_required=_api_key is not None),
+        rate_limit=CapabilityRateLimit(
+            enabled=_rate_limiter.enabled,
+            requests_per_minute=(
+                _rate_limiter.requests_per_minute if _rate_limiter.enabled else None
+            ),
+        ),
+        limits=CapabilityLimits(
+            default_max_tokens=_default_max_tokens,
+            default_timeout_seconds=_default_timeout,
+        ),
+    )
 
 
 # =============================================================================
@@ -1465,7 +1579,10 @@ def _inject_json_instruction(messages: list, instruction: str) -> list:
 # =============================================================================
 
 
-@app.post("/v1/messages")
+@app.post(
+    "/v1/messages",
+    dependencies=[Depends(verify_api_key), Depends(check_rate_limit)],
+)
 async def create_anthropic_message(
     request: Request,
 ):
@@ -1590,7 +1707,10 @@ async def create_anthropic_message(
     )
 
 
-@app.post("/v1/messages/count_tokens")
+@app.post(
+    "/v1/messages/count_tokens",
+    dependencies=[Depends(verify_api_key), Depends(check_rate_limit)],
+)
 async def count_anthropic_tokens(request: Request):
     """
     Count tokens for an Anthropic Messages API request.

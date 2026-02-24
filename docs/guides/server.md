@@ -34,6 +34,7 @@ vllm-mlx serve mlx-community/Llama-3.2-3B-Instruct-4bit --port 8000 --continuous
 |--------|-------------|---------|
 | `--port` | Server port | 8000 |
 | `--host` | Server host | 0.0.0.0 |
+| `--localhost` | Bind to localhost only; overrides `--host` | False |
 | `--api-key` | API key for authentication | None |
 | `--rate-limit` | Requests per minute per client (0 = disabled) | 0 |
 | `--timeout` | Request timeout in seconds | 300 |
@@ -104,6 +105,14 @@ GET /v1/models
 
 Returns available models.
 
+### Capabilities
+
+```bash
+GET /v1/capabilities
+```
+
+Returns runtime capabilities for feature negotiation, including enabled modalities, auth/rate-limit status, and default limits.
+
 ### Embeddings
 
 ```bash
@@ -135,6 +144,10 @@ POST /v1/messages
 ```
 
 Anthropic-compatible endpoint that allows tools like Claude Code and OpenCode to connect directly to vllm-mlx. Internally it translates Anthropic requests to OpenAI format, runs inference through the engine, and converts the response back to Anthropic format.
+
+When `--api-key` is enabled, authentication accepts either:
+- `Authorization: Bearer <api-key>`
+- `x-api-key: <api-key>`
 
 Capabilities:
 - Non-streaming and streaming responses (SSE)

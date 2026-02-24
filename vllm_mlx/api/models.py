@@ -280,6 +280,71 @@ class ModelsResponse(BaseModel):
 
 
 # =============================================================================
+# Capabilities
+# =============================================================================
+
+
+class CapabilityModalities(BaseModel):
+    """Modality capabilities for the currently loaded runtime."""
+
+    text: bool
+    image: bool
+    video: bool
+    audio_input: bool
+    audio_output: bool
+
+
+class CapabilityFeatures(BaseModel):
+    """Feature capability flags for API/runtime behavior."""
+
+    streaming: bool
+    tool_calling: bool
+    auto_tool_choice: bool
+    structured_output: bool
+    reasoning: bool
+    embeddings: bool
+    anthropic_messages: bool
+    mcp: bool
+
+
+class CapabilityAuth(BaseModel):
+    """Authentication behavior exposed to API clients."""
+
+    api_key_required: bool
+    accepted_headers: list[str] = Field(
+        default_factory=lambda: ["authorization", "x-api-key"]
+    )
+
+
+class CapabilityRateLimit(BaseModel):
+    """Rate limit behavior for the current server runtime."""
+
+    enabled: bool
+    requests_per_minute: int | None = None
+
+
+class CapabilityLimits(BaseModel):
+    """Default request limits used when clients do not override values."""
+
+    default_max_tokens: int
+    default_timeout_seconds: float
+
+
+class CapabilitiesResponse(BaseModel):
+    """Response for runtime API capability discovery."""
+
+    object: str = "capabilities"
+    model_loaded: bool
+    model_name: str | None = None
+    model_type: str | None = None
+    modalities: CapabilityModalities
+    features: CapabilityFeatures
+    auth: CapabilityAuth
+    rate_limit: CapabilityRateLimit
+    limits: CapabilityLimits
+
+
+# =============================================================================
 # MCP (Model Context Protocol)
 # =============================================================================
 
