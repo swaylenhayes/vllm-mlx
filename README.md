@@ -51,7 +51,7 @@ The phase table above covers speed. The fork also changed model usability and ru
 | Single-user runtime path | Batched path could produce runaway generation on some models | `--runtime-mode auto` selects simple engine for single-user usage | Cleaner EOS/stop behavior for affected models |
 | Thinking-model output | `<think>...</think>` could interfere with downstream parsing | Reasoning parser flow hardened; parser ordering fixed | Cleaner assistant content and better tool extraction |
 | LiquidAI/WaveCut tool calls | LiquidAI format not recognized | Added parser: `liquidai` / `liquid` / `lfm` | Structured `tool_calls` can now be extracted |
-| Decode controls | No OpenAI-style frequency control | Added `frequency_penalty` mapping to repetition penalty | Frontend can tune repetition behavior consistently |
+| Decode controls | No OpenAI-style frequency control | Added `frequency_penalty` mapping to repetition penalty | API clients can tune repetition behavior consistently |
 
 Serve profile used for local reliability work:
 
