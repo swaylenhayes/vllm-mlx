@@ -1,4 +1,4 @@
-# vLLM-MLX
+# vLLM-MLX Fork (swaylenhayes/vllm-mlx)
 
 **vLLM-like inference for Apple Silicon** - GPU-accelerated Text, Image, Video & Audio on Mac
 
