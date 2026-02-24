@@ -133,6 +133,7 @@ class TestChatCompletionRequest:
             temperature=0.5,
             frequency_penalty=0.3,
             repetition_penalty=1.2,
+            max_thinking_tokens=128,
             stream=True,
         )
 
@@ -140,6 +141,7 @@ class TestChatCompletionRequest:
         assert request.temperature == 0.5
         assert request.frequency_penalty == 0.3
         assert request.repetition_penalty == 1.2
+        assert request.max_thinking_tokens == 128
         assert request.stream is True
 
     def test_request_with_video_params(self):
@@ -307,6 +309,42 @@ class TestHelperFunctions:
         from vllm_mlx.server import _resolve_repetition_penalty
 
         assert _resolve_repetition_penalty(None, -2.0) == 0.01
+
+    def test_resolve_max_thinking_tokens_prefers_request(self, monkeypatch):
+        import vllm_mlx.server as server
+
+        monkeypatch.setattr(server, "_max_thinking_tokens", 256)
+        assert server._resolve_max_thinking_tokens(64) == 64
+        assert server._resolve_max_thinking_tokens(None) == 256
+
+    def test_split_text_by_token_budget_fallback(self):
+        from vllm_mlx.server import _split_text_by_token_budget
+
+        within, overflow = _split_text_by_token_budget("a b c d", 2, None)
+        assert within == "a b"
+        assert overflow == "c d"
+
+    def test_liquidai_tool_parser_on_reasoning_cleaned_content(self, monkeypatch):
+        import vllm_mlx.server as server
+        from vllm_mlx.reasoning import get_parser
+
+        monkeypatch.setattr(server, "_enable_auto_tool_choice", True)
+        monkeypatch.setattr(server, "_tool_call_parser", "liquidai")
+        monkeypatch.setattr(server, "_tool_parser_instance", None)
+        monkeypatch.setattr(server, "_engine", None)
+
+        reasoning_parser = get_parser("qwen3")()
+        _, content = reasoning_parser.extract_reasoning(
+            "<think>planning...</think>"
+            "<|tool_call_start|>[search_files(query='requests')]<|tool_call_end|>"
+        )
+
+        cleaned, tool_calls = server._parse_tool_calls_with_parser(content or "", None)
+
+        assert cleaned == ""
+        assert tool_calls is not None
+        assert len(tool_calls) == 1
+        assert tool_calls[0].function.name == "search_files"
 
 
 # =============================================================================

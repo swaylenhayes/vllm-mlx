@@ -8,6 +8,7 @@ Automatically detects and parses tool calls from various model formats.
 import json
 import re
 import uuid
+import ast
 from collections.abc import Sequence
 from typing import Any
 
@@ -44,6 +45,10 @@ class AutoToolParser(ToolParser):
 
     QWEN_BRACKET_PATTERN = re.compile(
         r"\[Calling tool:\s*(\w+)\((\{.*?\})\)\]", re.DOTALL
+    )
+    LIQUIDAI_PATTERN = re.compile(
+        r"<\|tool_call_start\|>\s*\[\s*(?P<call>.*?)\s*\]\s*<\|tool_call_end\|>",
+        re.DOTALL,
     )
     QWEN_XML_PATTERN = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
     LLAMA_PATTERN = re.compile(r"<function=([^>]+)>(\{.*?\})</function>", re.DOTALL)
@@ -141,7 +146,24 @@ class AutoToolParser(ToolParser):
         if bracket_matches:
             cleaned_text = self.QWEN_BRACKET_PATTERN.sub("", cleaned_text).strip()
 
-        # 3. Try Nemotron pattern (before Qwen XML as it's more specific)
+        # 3. Try LiquidAI/LFM format
+        liquidai_matches = list(self.LIQUIDAI_PATTERN.finditer(cleaned_text))
+        for match in liquidai_matches:
+            parsed = self._parse_liquidai_call(match.group("call").strip())
+            if parsed is not None:
+                name, args_json = parsed
+                tool_calls.append(
+                    {
+                        "id": generate_tool_id(),
+                        "name": name,
+                        "arguments": args_json,
+                    }
+                )
+
+        if liquidai_matches:
+            cleaned_text = self.LIQUIDAI_PATTERN.sub("", cleaned_text).strip()
+
+        # 4. Try Nemotron pattern (before Qwen XML as it's more specific)
         nemotron_matches = self.NEMOTRON_PATTERN.findall(cleaned_text)
         for name, params_block in nemotron_matches:
             params = self.NEMOTRON_PARAM_PATTERN.findall(params_block)
@@ -157,7 +179,7 @@ class AutoToolParser(ToolParser):
         if nemotron_matches:
             cleaned_text = self.NEMOTRON_PATTERN.sub("", cleaned_text).strip()
 
-        # 4. Try Qwen/Hermes XML pattern
+        # 5. Try Qwen/Hermes XML pattern
         xml_matches = self.QWEN_XML_PATTERN.findall(cleaned_text)
         for match in xml_matches:
             try:
@@ -182,7 +204,7 @@ class AutoToolParser(ToolParser):
         if xml_matches:
             cleaned_text = self.QWEN_XML_PATTERN.sub("", cleaned_text).strip()
 
-        # 5. Try Llama pattern
+        # 6. Try Llama pattern
         llama_matches = self.LLAMA_PATTERN.findall(cleaned_text)
         for name, args_str in llama_matches:
             try:
@@ -210,7 +232,7 @@ class AutoToolParser(ToolParser):
         if llama_matches:
             cleaned_text = self.LLAMA_PATTERN.sub("", cleaned_text).strip()
 
-        # 6. Fallback: Try raw JSON
+        # 7. Fallback: Try raw JSON
         if not tool_calls:
             raw_calls = self._parse_raw_json_tool_calls(cleaned_text)
             if raw_calls:
@@ -227,6 +249,23 @@ class AutoToolParser(ToolParser):
             return ExtractedToolCallInformation(
                 tools_called=False, tool_calls=[], content=model_output
             )
+
+    def _parse_liquidai_call(self, call_expr: str) -> tuple[str, str] | None:
+        """Parse `func(k='v')` into (func, JSON args)."""
+        try:
+            parsed = ast.parse(call_expr, mode="eval")
+            node = parsed.body
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+                return None
+
+            args = {}
+            for kw in node.keywords:
+                if kw.arg is None:
+                    return None
+                args[kw.arg] = ast.literal_eval(kw.value)
+            return node.func.id, json.dumps(args, ensure_ascii=False)
+        except Exception:
+            return None
 
     def _parse_raw_json_tool_calls(self, text: str) -> list[dict[str, Any]]:
         """

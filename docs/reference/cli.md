@@ -41,9 +41,10 @@ vllm-mlx serve <model> [options]
 | `--default-temperature` | Default temperature when not specified in request | None |
 | `--default-top-p` | Default top_p when not specified in request | None |
 | `--reasoning-parser` | Parser for reasoning models (`qwen3`, `deepseek_r1`) | None |
+| `--max-thinking-tokens` | Max reasoning tokens before overflow is routed into content (requires `--reasoning-parser`) | None |
 | `--embedding-model` | Pre-load an embedding model at startup | None |
 | `--enable-auto-tool-choice` | Enable automatic tool calling | False |
-| `--tool-call-parser` | Tool call parser (`auto`, `mistral`, `qwen`, `llama`, `hermes`, `deepseek`, `kimi`, `granite`, `nemotron`, `xlam`, `functionary`, `glm47`) | None |
+| `--tool-call-parser` | Tool call parser (`auto`, `mistral`, `qwen`, `llama`, `hermes`, `deepseek`, `kimi`, `liquidai`, `liquid`, `lfm`, `granite`, `nemotron`, `xlam`, `functionary`, `glm47`) | None |
 
 ### Examples
 

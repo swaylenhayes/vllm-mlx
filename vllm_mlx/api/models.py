@@ -163,6 +163,9 @@ class ChatCompletionRequest(BaseModel):
     frequency_penalty: float | None = Field(default=None, ge=-2.0, le=2.0)
     # Native repetition penalty passthrough for backends that support it.
     repetition_penalty: float | None = Field(default=None, gt=0.0)
+    # Optional per-request cap for reasoning tokens when reasoning parser is active.
+    # If omitted, server-level --max-thinking-tokens policy applies.
+    max_thinking_tokens: int | None = Field(default=None, gt=0)
     max_tokens: int | None = None
     stream: bool = False
     stream_options: StreamOptions | None = (

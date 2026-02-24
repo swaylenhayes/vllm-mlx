@@ -261,6 +261,7 @@ class TestChatCompletion:
             top_p=0.9,
             frequency_penalty=0.4,
             repetition_penalty=1.1,
+            max_thinking_tokens=256,
             max_tokens=100,
             stream=True,
             stream_options=StreamOptions(include_usage=True),
@@ -273,6 +274,7 @@ class TestChatCompletion:
         assert req.temperature == 0.5
         assert req.frequency_penalty == 0.4
         assert req.repetition_penalty == 1.1
+        assert req.max_thinking_tokens == 256
         assert req.stream is True
         assert req.stream_options.include_usage is True
         assert req.tools is not None

@@ -53,6 +53,7 @@ vllm-mlx serve mlx-community/Llama-3.2-3B-Instruct-4bit --port 8000 --continuous
 | `--stream-interval` | Tokens per stream chunk | 1 |
 | `--mcp-config` | Path to MCP config file | None |
 | `--reasoning-parser` | Parser for reasoning models (`qwen3`, `deepseek_r1`) | None |
+| `--max-thinking-tokens` | Max reasoning tokens to emit before overflow is routed into content (requires `--reasoning-parser`) | None |
 | `--embedding-model` | Pre-load an embedding model at startup | None |
 | `--enable-auto-tool-choice` | Enable automatic tool calling | False |
 | `--tool-call-parser` | Tool call parser (see [Tool Calling](tool-calling.md)) | None |

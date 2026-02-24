@@ -15,6 +15,7 @@ from vllm_mlx.tool_parsers import (
     GraniteToolParser,
     HermesToolParser,
     KimiToolParser,
+    LiquidAIToolParser,
     LlamaToolParser,
     MistralToolParser,
     NemotronToolParser,
@@ -36,6 +37,7 @@ class TestNativeToolFormatCapability:
             GraniteToolParser,
             FunctionaryToolParser,
             KimiToolParser,
+            LiquidAIToolParser,
             HermesToolParser,
         ]
         for parser_cls in native_parsers:
@@ -72,6 +74,7 @@ class TestNativeToolFormatCapability:
             "granite",
             "functionary",
             "kimi",
+            "liquidai",
             "hermes",
         ]:
             parser_cls = ToolParserManager.get_tool_parser(name)

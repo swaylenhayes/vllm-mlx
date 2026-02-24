@@ -50,7 +50,7 @@ import time
 import uuid
 from collections import defaultdict
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Any
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
@@ -124,6 +124,7 @@ _default_max_tokens: int = 32768
 _default_timeout: float = 300.0  # Default request timeout in seconds (5 minutes)
 _default_temperature: float | None = None  # Set via --default-temperature
 _default_top_p: float | None = None  # Set via --default-top-p
+_max_thinking_tokens: int | None = None  # Set via --max-thinking-tokens
 
 _FALLBACK_TEMPERATURE = 0.7
 _FALLBACK_TOP_P = 0.9
@@ -196,6 +197,88 @@ def _resolve_repetition_penalty(
     mapped = 1.0 + frequency_penalty
     # Decoding backends require strictly positive repetition penalty.
     return max(0.01, mapped)
+
+
+def _resolve_max_thinking_tokens(request_value: int | None) -> int | None:
+    """Resolve max thinking budget: request override > server default."""
+    if request_value is not None:
+        return request_value
+    return _max_thinking_tokens
+
+
+def _get_text_tokenizer() -> Any | None:
+    """Return a tokenizer with encode/decode if available."""
+    if _engine is None:
+        return None
+    tokenizer = getattr(_engine, "tokenizer", None)
+    if tokenizer is None:
+        return None
+    if hasattr(tokenizer, "encode") and hasattr(tokenizer, "decode"):
+        return tokenizer
+    nested = getattr(tokenizer, "tokenizer", None)
+    if nested is not None and hasattr(nested, "encode") and hasattr(nested, "decode"):
+        return nested
+    return None
+
+
+def _encode_text(tokenizer: Any, text: str) -> list[int]:
+    """Best-effort tokenizer encoding wrapper."""
+    try:
+        return tokenizer.encode(text, add_special_tokens=False)
+    except TypeError:
+        return tokenizer.encode(text)
+
+
+def _decode_tokens(tokenizer: Any, token_ids: list[int]) -> str:
+    """Best-effort tokenizer decode wrapper."""
+    try:
+        return tokenizer.decode(token_ids, skip_special_tokens=False)
+    except TypeError:
+        return tokenizer.decode(token_ids)
+
+
+def _split_text_by_token_budget(
+    text: str,
+    token_budget: int,
+    tokenizer: Any | None,
+) -> tuple[str, str]:
+    """
+    Split text into (within_budget, overflow) by token count.
+
+    Falls back to a whitespace split if tokenizer is unavailable.
+    """
+    if not text or token_budget <= 0:
+        return "", text
+
+    if tokenizer is not None:
+        try:
+            token_ids = _encode_text(tokenizer, text)
+            if len(token_ids) <= token_budget:
+                return text, ""
+            in_budget = _decode_tokens(tokenizer, token_ids[:token_budget])
+            overflow = _decode_tokens(tokenizer, token_ids[token_budget:])
+            return in_budget, overflow
+        except Exception:
+            pass
+
+    words = text.split()
+    if len(words) <= token_budget:
+        return text, ""
+    in_budget = " ".join(words[:token_budget])
+    overflow = " ".join(words[token_budget:])
+    return in_budget, overflow
+
+
+def _count_text_tokens(text: str, tokenizer: Any | None) -> int:
+    """Best-effort token count for text deltas."""
+    if not text:
+        return 0
+    if tokenizer is not None:
+        try:
+            return len(_encode_text(tokenizer, text))
+        except Exception:
+            pass
+    return len(text.split())
 
 
 # Global MCP manager
@@ -1561,6 +1644,7 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
         "max_tokens": request.max_tokens or _default_max_tokens,
         "temperature": _resolve_temperature(request.temperature),
         "top_p": _resolve_top_p(request.top_p),
+        "stop": request.stop,
     }
     repetition_penalty = _resolve_repetition_penalty(
         request.repetition_penalty,
@@ -1609,20 +1693,42 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
         f"Chat completion: {output.completion_tokens} tokens in {elapsed:.2f}s ({tokens_per_sec:.1f} tok/s)"
     )
 
-    # Parse tool calls from output using configured parser
-    cleaned_text, tool_calls = _parse_tool_calls_with_parser(output.text, request)
-
-    # Extract reasoning content FIRST (strips channel tokens before JSON extraction)
+    # Extract reasoning before tool parsing so parser markup in final content
+    # is not hidden behind reasoning wrappers.
     reasoning_text = None
-    if _reasoning_parser and not tool_calls:
-        text_to_parse = cleaned_text or output.text
-        reasoning_text, cleaned_text = _reasoning_parser.extract_reasoning(
-            text_to_parse
+    text_for_tool_parsing = output.text
+    if _reasoning_parser:
+        reasoning_text, text_for_tool_parsing = _reasoning_parser.extract_reasoning(
+            output.text
         )
+
+        max_thinking_tokens = _resolve_max_thinking_tokens(request.max_thinking_tokens)
+        if max_thinking_tokens is not None and reasoning_text:
+            tokenizer = _get_text_tokenizer()
+            kept_reasoning, overflow_reasoning = _split_text_by_token_budget(
+                reasoning_text,
+                max_thinking_tokens,
+                tokenizer,
+            )
+            if overflow_reasoning:
+                logger.info(
+                    "Applied max thinking budget: kept %s tokens of reasoning, "
+                    "routed overflow to content/tool parsing",
+                    max_thinking_tokens,
+                )
+                reasoning_text = kept_reasoning or None
+                merged_content = (overflow_reasoning + (text_for_tool_parsing or "")).strip()
+                text_for_tool_parsing = merged_content or None
+
+    # Parse tool calls from (possibly reasoning-cleaned) output
+    cleaned_text, tool_calls = _parse_tool_calls_with_parser(
+        text_for_tool_parsing or "",
+        request,
+    )
 
     # Process response_format if specified (after reasoning parser cleaned the text)
     if response_format and not tool_calls:
-        json_input = cleaned_text or output.text
+        json_input = cleaned_text or text_for_tool_parsing or output.text
         _, parsed_json, is_valid, error = parse_json_output(json_input, response_format)
         if parsed_json is not None:
             # Return JSON as string
@@ -1784,9 +1890,29 @@ async def create_anthropic_message(
         f"Anthropic messages: {output.completion_tokens} tokens in {elapsed:.2f}s ({tokens_per_sec:.1f} tok/s)"
     )
 
-    # Parse tool calls
+    # Extract reasoning before tool parsing to avoid parser-order conflicts.
+    text_for_tool_parsing = output.text
+    if _reasoning_parser:
+        reasoning_text, text_for_tool_parsing = _reasoning_parser.extract_reasoning(
+            output.text
+        )
+        max_thinking_tokens = _resolve_max_thinking_tokens(
+            getattr(openai_request, "max_thinking_tokens", None)
+        )
+        if max_thinking_tokens is not None and reasoning_text:
+            tokenizer = _get_text_tokenizer()
+            _, overflow_reasoning = _split_text_by_token_budget(
+                reasoning_text,
+                max_thinking_tokens,
+                tokenizer,
+            )
+            if overflow_reasoning:
+                merged_content = (overflow_reasoning + (text_for_tool_parsing or "")).strip()
+                text_for_tool_parsing = merged_content or None
+
     cleaned_text, tool_calls = _parse_tool_calls_with_parser(
-        output.text, openai_request
+        text_for_tool_parsing or "",
+        openai_request,
     )
 
     # Clean output text
@@ -2153,6 +2279,49 @@ async def stream_chat_completion(
             tool_parser = _tool_parser_instance
             tool_parser.reset()
 
+    # Reasoning budget state
+    max_thinking_tokens = _resolve_max_thinking_tokens(request.max_thinking_tokens)
+    reasoning_tokenizer = _get_text_tokenizer() if max_thinking_tokens else None
+    reasoning_tokens_used = 0
+
+    def _route_tool_stream_delta(
+        content_delta: str,
+    ) -> tuple[str | None, list | None, bool]:
+        """
+        Route a content delta through the configured streaming tool parser.
+
+        Returns:
+            (content, tool_calls, suppress_output)
+        """
+        nonlocal tool_accumulated_text, tool_calls_detected, tool_markup_possible
+
+        if not tool_parser or not content_delta:
+            return content_delta, None, False
+
+        # Fast path: avoid parser scans until tool markup starts.
+        if not tool_markup_possible and "<" not in content_delta:
+            tool_accumulated_text += content_delta
+            return content_delta, None, False
+
+        if not tool_markup_possible:
+            tool_markup_possible = True
+
+        tool_previous = tool_accumulated_text
+        tool_accumulated_text += content_delta
+        tool_result = tool_parser.extract_tool_calls_streaming(
+            tool_previous, tool_accumulated_text, content_delta
+        )
+
+        if tool_result is None:
+            # Parser requests suppression while inside tool markup.
+            return None, None, True
+
+        if "tool_calls" in tool_result:
+            tool_calls_detected = True
+            return None, tool_result["tool_calls"], False
+
+        return tool_result.get("content", ""), None, False
+
     # Stream content
     async for output in engine.stream_chat(messages=messages, **kwargs):
         delta_text = output.new_text
@@ -2164,7 +2333,11 @@ async def stream_chat_completion(
         if hasattr(output, "completion_tokens") and output.completion_tokens:
             completion_tokens = output.completion_tokens
 
-        # Use reasoning parser if enabled
+        reasoning_delta = None
+        content_delta = None
+        tool_calls_delta = None
+
+        # Reasoning-aware path
         if _reasoning_parser and delta_text:
             previous_text = accumulated_text
             accumulated_text += delta_text
@@ -2172,110 +2345,82 @@ async def stream_chat_completion(
                 previous_text, accumulated_text, delta_text
             )
 
-            if delta_msg is None:
-                # Skip this chunk (e.g., <think> token itself)
+            if delta_msg is not None:
+                reasoning_delta = delta_msg.reasoning
+                content_delta = delta_msg.content
+
+                # Enforce API-layer thinking budget by shifting overflow into content.
+                if max_thinking_tokens is not None and reasoning_delta:
+                    remaining = max_thinking_tokens - reasoning_tokens_used
+                    kept_reasoning, overflow_reasoning = _split_text_by_token_budget(
+                        reasoning_delta,
+                        remaining,
+                        reasoning_tokenizer,
+                    )
+                    reasoning_delta = kept_reasoning or None
+                    if reasoning_delta:
+                        reasoning_tokens_used += _count_text_tokens(
+                            reasoning_delta,
+                            reasoning_tokenizer,
+                        )
+                    if overflow_reasoning:
+                        content_delta = overflow_reasoning + (content_delta or "")
+
+            # Skip parser-only token deltas unless this is the final chunk.
+            if delta_msg is None and not output.finished:
                 continue
 
-            chunk = ChatCompletionChunk(
-                id=response_id,
-                model=request.model,
-                choices=[
-                    ChatCompletionChunkChoice(
-                        delta=ChatCompletionChunkDelta(
-                            content=delta_msg.content,
-                            reasoning=delta_msg.reasoning,
-                        ),
-                        finish_reason=output.finish_reason if output.finished else None,
-                    )
-                ],
-                usage=get_usage(output) if output.finished else None,
-            )
-            yield f"data: {chunk.model_dump_json()}\n\n"
-        else:
-            # Standard path without reasoning parsing
-            content = delta_text
-
-            # Filter special tokens that may leak into streaming output
-            if content:
-                content = SPECIAL_TOKENS_PATTERN.sub("", content)
+        # Standard path (no reasoning parser)
+        if not _reasoning_parser:
+            content_delta = delta_text
+            if content_delta:
+                content_delta = SPECIAL_TOKENS_PATTERN.sub("", content_delta)
 
             # Add <think> prefix on first content chunk for thinking models
-            if is_thinking_model and not think_prefix_sent and content:
-                content = "<think>" + content
+            if is_thinking_model and not think_prefix_sent and content_delta:
+                content_delta = "<think>" + content_delta
                 think_prefix_sent = True
 
-            # Tool call streaming parsing
-            if tool_parser and delta_text:
-                # Fast path: skip full parsing until '<' is seen in the stream,
-                # which could start tool markup (e.g. <tool_call>). This avoids
-                # per-token string scanning on the growing accumulated text.
-                if not tool_markup_possible and "<" not in delta_text:
-                    tool_accumulated_text += delta_text
-                    # No tool markup yet, fall through to normal chunk emission
-                else:
-                    if not tool_markup_possible:
-                        tool_markup_possible = True
-                    tool_previous = tool_accumulated_text
-                    tool_accumulated_text += delta_text
-                    tool_result = tool_parser.extract_tool_calls_streaming(
-                        tool_previous, tool_accumulated_text, delta_text
-                    )
-
-                    if tool_result is None:
-                        # Inside tool markup - suppress output
-                        continue
-
-                    if "tool_calls" in tool_result:
-                        # Emit structured tool calls
-                        tool_calls_detected = True
-                        chunk = ChatCompletionChunk(
-                            id=response_id,
-                            model=request.model,
-                            choices=[
-                                ChatCompletionChunkChoice(
-                                    delta=ChatCompletionChunkDelta(
-                                        tool_calls=tool_result["tool_calls"]
-                                    ),
-                                    finish_reason=(
-                                        "tool_calls" if output.finished else None
-                                    ),
-                                )
-                            ],
-                            usage=get_usage(output) if output.finished else None,
-                        )
-                        yield f"data: {chunk.model_dump_json()}\n\n"
-                        continue
-
-                    # Normal content from tool parser
-                    content = tool_result.get("content", "")
-
-            chunk = ChatCompletionChunk(
-                id=response_id,
-                model=request.model,
-                choices=[
-                    ChatCompletionChunkChoice(
-                        delta=ChatCompletionChunkDelta(
-                            content=content if content else None
-                        ),
-                        finish_reason=(
-                            "tool_calls"
-                            if (output.finished and tool_calls_detected)
-                            else (output.finish_reason if output.finished else None)
-                        ),
-                    )
-                ],
-                usage=get_usage(output) if output.finished else None,
+        # Route visible content through tool parser
+        if content_delta:
+            parsed_content, parsed_tool_calls, suppress = _route_tool_stream_delta(
+                content_delta
             )
-            yield f"data: {chunk.model_dump_json()}\n\n"
+            if suppress and not reasoning_delta and not output.finished:
+                continue
+            content_delta = parsed_content
+            tool_calls_delta = parsed_tool_calls
+
+        if not reasoning_delta and not content_delta and not tool_calls_delta and not output.finished:
+            continue
+
+        chunk = ChatCompletionChunk(
+            id=response_id,
+            model=request.model,
+            choices=[
+                ChatCompletionChunkChoice(
+                    delta=ChatCompletionChunkDelta(
+                        content=content_delta if content_delta else None,
+                        reasoning=reasoning_delta if reasoning_delta else None,
+                        tool_calls=tool_calls_delta,
+                    ),
+                    finish_reason=(
+                        "tool_calls"
+                        if (
+                            output.finished
+                            and (tool_calls_delta is not None or tool_calls_detected)
+                        )
+                        else (output.finish_reason if output.finished else None)
+                    ),
+                )
+            ],
+            usage=get_usage(output) if output.finished else None,
+        )
+        yield f"data: {chunk.model_dump_json()}\n\n"
 
     # Fallback: if tool parser accumulated text but never emitted tool_calls
     # (e.g., </tool_call> never arrived - incomplete tool call)
-    if (
-        tool_parser
-        and tool_accumulated_text
-        and not tool_calls_detected
-        and "<tool_call>" in tool_accumulated_text
-    ):
+    if tool_parser and tool_accumulated_text and not tool_calls_detected and tool_markup_possible:
         result = tool_parser.extract_tool_calls(tool_accumulated_text)
         if result.tools_called:
             tool_chunk = ChatCompletionChunk(
@@ -2450,6 +2595,15 @@ Examples:
         ),
     )
     parser.add_argument(
+        "--max-thinking-tokens",
+        type=int,
+        default=None,
+        help=(
+            "Maximum reasoning tokens to emit before routing overflow into content. "
+            "Requires --reasoning-parser."
+        ),
+    )
+    parser.add_argument(
         "--embedding-model",
         type=str,
         default=None,
@@ -2472,9 +2626,10 @@ Examples:
 
     # Set global configuration
     global _api_key, _default_timeout, _rate_limiter
-    global _default_temperature, _default_top_p
+    global _default_temperature, _default_top_p, _max_thinking_tokens
     _api_key = args.api_key
     _default_timeout = args.timeout
+    _max_thinking_tokens = args.max_thinking_tokens
     if args.default_temperature is not None:
         _default_temperature = args.default_temperature
     if args.default_top_p is not None:
@@ -2507,6 +2662,9 @@ Examples:
         os.environ["VLLM_MLX_MCP_CONFIG"] = args.mcp_config
 
     # Initialize reasoning parser if specified
+    if args.max_thinking_tokens is not None and not args.reasoning_parser:
+        raise ValueError("--max-thinking-tokens requires --reasoning-parser")
+
     if args.reasoning_parser:
         global _reasoning_parser
         from .reasoning import get_parser

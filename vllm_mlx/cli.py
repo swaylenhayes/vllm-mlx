@@ -186,6 +186,12 @@ def serve_command(args):
     if args.mllm_vision_cache_size < 1:
         print("Error: --mllm-vision-cache-size must be >= 1")
         sys.exit(1)
+    if args.max_thinking_tokens is not None and args.max_thinking_tokens < 1:
+        print("Error: --max-thinking-tokens must be >= 1")
+        sys.exit(1)
+    if args.max_thinking_tokens is not None and not args.reasoning_parser:
+        print("Error: --max-thinking-tokens requires --reasoning-parser")
+        sys.exit(1)
 
     # Configure server security settings
     server._api_key = args.api_key
@@ -231,6 +237,7 @@ def serve_command(args):
             sys.exit(1)
     else:
         server._reasoning_parser = None
+    server._max_thinking_tokens = args.max_thinking_tokens
 
     bind_host = _resolve_bind_host(args.host, args.localhost)
     observed_peak = load_observed_peak_concurrency()
@@ -261,7 +268,13 @@ def serve_command(args):
     else:
         print("  Tool calling: Use --enable-auto-tool-choice to enable")
     if args.reasoning_parser:
-        print(f"  Reasoning: ENABLED (parser: {args.reasoning_parser})")
+        if args.max_thinking_tokens is not None:
+            print(
+                "  Reasoning: ENABLED "
+                f"(parser: {args.reasoning_parser}, max_thinking_tokens={args.max_thinking_tokens})"
+            )
+        else:
+            print(f"  Reasoning: ENABLED (parser: {args.reasoning_parser})")
     else:
         print("  Reasoning: Use --reasoning-parser to enable")
     print(f"  Runtime mode: {runtime_mode} ({runtime_mode_reason})")
@@ -979,6 +992,9 @@ Examples:
             "hermes",
             "deepseek",
             "kimi",
+            "liquidai",
+            "liquid",
+            "lfm",
             "granite",
             "nemotron",
             "xlam",
@@ -988,7 +1004,8 @@ Examples:
         help=(
             "Select the tool call parser for the model. Options: "
             "auto (auto-detect), mistral, qwen, qwen3_coder, llama, hermes, "
-            "deepseek, kimi, granite, nemotron, xlam, functionary, glm47. "
+            "deepseek, kimi, liquidai, liquid, lfm, granite, nemotron, "
+            "xlam, functionary, glm47. "
             "Required for --enable-auto-tool-choice."
         ),
     )
@@ -1005,6 +1022,16 @@ Examples:
             "Enable reasoning content extraction with specified parser. "
             "Extracts <think>...</think> tags into reasoning_content field. "
             f"Options: {', '.join(reasoning_choices)}."
+        ),
+    )
+    serve_parser.add_argument(
+        "--max-thinking-tokens",
+        type=int,
+        default=None,
+        help=(
+            "Maximum reasoning tokens to emit before routing overflow into content. "
+            "Requires --reasoning-parser. Can be overridden per request via "
+            "`max_thinking_tokens`."
         ),
     )
     # Multimodal option

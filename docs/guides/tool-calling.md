@@ -58,6 +58,7 @@ Use `--tool-call-parser` to select a parser for your model family:
 | `hermes` | `nous` | Hermes, NousResearch | `<tool_call>` JSON in XML |
 | `deepseek` | `deepseek_v3`, `deepseek_r1` | DeepSeek V3, R1 | Unicode delimiters |
 | `kimi` | `kimi_k2`, `moonshot` | Kimi K2, Moonshot | `<\|tool_call_begin\|>` tokens |
+| `liquidai` | `liquid`, `lfm` | LiquidAI LFM2.5 / WaveCut | `<\|tool_call_start\|>[func(key='value')]<\|tool_call_end\|>` |
 | `granite` | `granite3` | IBM Granite 3.x, 4.x | `<\|tool_call\|>` or `<tool_call>` |
 | `nemotron` | `nemotron3` | NVIDIA Nemotron | `<tool_call><function=...><parameter=...>` |
 | `xlam` | | Salesforce xLAM | JSON with `tool_calls` array |
@@ -134,6 +135,14 @@ vllm-mlx serve mlx-community/Kimi-K2-Instruct-4bit \
   --enable-auto-tool-choice --tool-call-parser kimi
 ```
 
+### LiquidAI / LFM
+
+```bash
+# LiquidAI LFM / WaveCut family
+vllm-mlx serve WaveCut/LFM2.5-1.2B-Thinking-MLX_4bit_DWQ \
+  --enable-auto-tool-choice --tool-call-parser liquidai
+```
+
 ### Salesforce xLAM
 
 ```bash
@@ -154,10 +163,11 @@ vllm-mlx serve mlx-community/Qwen3-4B-4bit \
 The auto parser tries formats in this order:
 1. Mistral (`[TOOL_CALLS]`)
 2. Qwen bracket (`[Calling tool:]`)
-3. Nemotron (`<tool_call><function=...><parameter=...>`)
-4. Qwen/Hermes XML (`<tool_call>{...}</tool_call>`)
-5. Llama (`<function=name>{...}</function>`)
-6. Raw JSON
+3. LiquidAI (`<|tool_call_start|>[func(...)]<|tool_call_end|>`)
+4. Nemotron (`<tool_call><function=...><parameter=...>`)
+5. Qwen/Hermes XML (`<tool_call>{...}</tool_call>`)
+6. Llama (`<function=name>{...}</function>`)
+7. Raw JSON
 
 ## Streaming Tool Calls
 

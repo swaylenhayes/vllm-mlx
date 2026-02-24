@@ -32,6 +32,7 @@ TRACKED_SERVER_OPTIONS = {
     "--stream-interval",
     "--mcp-config",
     "--reasoning-parser",
+    "--max-thinking-tokens",
     "--embedding-model",
     "--enable-auto-tool-choice",
     "--tool-call-parser",

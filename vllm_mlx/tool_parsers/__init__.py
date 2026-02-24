@@ -13,6 +13,7 @@ Available parsers:
 - hermes/nous: Hermes/NousResearch models
 - deepseek/deepseek_v3/deepseek_r1: DeepSeek models (unicode tokens)
 - kimi/kimi_k2/moonshot: Kimi/Moonshot models
+- liquidai/liquid/lfm: LiquidAI LFM models
 - granite/granite3: IBM Granite models
 - nemotron/nemotron3: NVIDIA Nemotron models
 - xlam: Salesforce xLAM models
@@ -50,6 +51,7 @@ from .functionary_tool_parser import FunctionaryToolParser
 from .granite_tool_parser import GraniteToolParser
 from .hermes_tool_parser import HermesToolParser
 from .kimi_tool_parser import KimiToolParser
+from .liquidai_tool_parser import LiquidAIToolParser
 from .llama_tool_parser import LlamaToolParser
 from .mistral_tool_parser import MistralToolParser
 from .nemotron_tool_parser import NemotronToolParser
@@ -71,6 +73,7 @@ __all__ = [
     "HermesToolParser",
     "DeepSeekToolParser",
     "KimiToolParser",
+    "LiquidAIToolParser",
     "GraniteToolParser",
     "NemotronToolParser",
     "xLAMToolParser",

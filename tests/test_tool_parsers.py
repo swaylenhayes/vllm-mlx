@@ -12,6 +12,7 @@ from vllm_mlx.tool_parsers import (
     GraniteToolParser,
     HermesToolParser,
     KimiToolParser,
+    LiquidAIToolParser,
     LlamaToolParser,
     MistralToolParser,
     NemotronToolParser,
@@ -35,6 +36,7 @@ class TestToolParserManager:
             "hermes",
             "deepseek",
             "kimi",
+            "liquidai",
             "granite",
             "nemotron",
             "xlam",
@@ -59,6 +61,9 @@ class TestToolParserManager:
             ("kimi", KimiToolParser),
             ("kimi_k2", KimiToolParser),
             ("moonshot", KimiToolParser),
+            ("liquidai", LiquidAIToolParser),
+            ("liquid", LiquidAIToolParser),
+            ("lfm", LiquidAIToolParser),
             ("granite", GraniteToolParser),
             ("granite3", GraniteToolParser),
             ("nemotron", NemotronToolParser),
@@ -88,6 +93,7 @@ class TestToolParserManager:
             "hermes",
             "deepseek",
             "kimi",
+            "liquidai",
             "granite",
             "nemotron",
             "xlam",
@@ -392,6 +398,46 @@ class TestGraniteToolParser:
         assert not result.tools_called
 
 
+class TestLiquidAIToolParser:
+    """Test the LiquidAI/LFM tool parser."""
+
+    @pytest.fixture
+    def parser(self):
+        return LiquidAIToolParser()
+
+    def test_liquidai_kwargs_format(self, parser):
+        text = (
+            "<|tool_call_start|>[send_slack_message(channel='#general', "
+            "message='deploy complete')]<|tool_call_end|>"
+        )
+        result = parser.extract_tool_calls(text)
+
+        assert result.tools_called
+        assert len(result.tool_calls) == 1
+        assert result.tool_calls[0]["name"] == "send_slack_message"
+        args = json.loads(result.tool_calls[0]["arguments"])
+        assert args["channel"] == "#general"
+        assert args["message"] == "deploy complete"
+
+    def test_liquidai_mixed_argument_types(self, parser):
+        text = (
+            "<|tool_call_start|>[search_files(query='requests', limit=10, "
+            "recursive=True)]<|tool_call_end|>"
+        )
+        result = parser.extract_tool_calls(text)
+
+        assert result.tools_called
+        args = json.loads(result.tool_calls[0]["arguments"])
+        assert args["query"] == "requests"
+        assert args["limit"] == 10
+        assert args["recursive"] is True
+
+    def test_no_tool_call(self, parser):
+        result = parser.extract_tool_calls("Normal assistant response.")
+        assert not result.tools_called
+        assert result.content == "Normal assistant response."
+
+
 class TestNemotronToolParser:
     """Test the Nemotron tool parser."""
 
@@ -567,6 +613,18 @@ class TestAutoToolParser:
 
         assert result.tools_called
         assert result.tool_calls[0]["name"] == "search"
+
+    def test_detects_liquidai(self, parser):
+        text = (
+            "<|tool_call_start|>[get_weather(location='San Francisco')]"
+            "<|tool_call_end|>"
+        )
+        result = parser.extract_tool_calls(text)
+
+        assert result.tools_called
+        assert result.tool_calls[0]["name"] == "get_weather"
+        args = json.loads(result.tool_calls[0]["arguments"])
+        assert args["location"] == "San Francisco"
 
     def test_detects_raw_json(self, parser):
         """Test auto detection of raw JSON format."""
