@@ -51,6 +51,7 @@ vllm-mlx brings native Apple Silicon GPU acceleration to vLLM by integrating:
 - [Video Benchmarks](benchmarks/video.md)
 - [Audio Benchmarks](benchmarks/audio.md)
 - [Fork Benefits](benchmarks/fork-benefits.md)
+- [Fork Improvement Log](benchmarks/fork-improvement-log.md)
 
 ### Development
 - [Architecture](development/architecture.md)

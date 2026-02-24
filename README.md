@@ -87,6 +87,17 @@ Latest shipped fork update (not yet reflected in the phase throughput table): `d
 Detailed model compatibility notes and re-evaluation summary:
 - [`docs/benchmarks/fork-benefits.md`](docs/benchmarks/fork-benefits.md)
 
+### Ongoing fork log (template-backed)
+
+For each new measured backend improvement, append an entry to:
+
+- [`docs/benchmarks/fork-improvement-log.md`](docs/benchmarks/fork-improvement-log.md)
+
+The log includes:
+- an append-only history of measured improvements
+- a copy/paste entry template for future updates
+- explicit baseline/result/caveat fields to keep claims reproducible
+
 ## Overview
 
 vllm-mlx brings native Apple Silicon GPU acceleration to vLLM by integrating:
