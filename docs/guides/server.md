@@ -118,6 +118,16 @@ GET /v1/capabilities
 
 Returns runtime capabilities for feature negotiation, including enabled modalities, auth/rate-limit status, and default limits.
 
+For runtime tooling that needs strict contract checks, use the typed helper:
+
+```python
+from vllm_mlx.capabilities_client import fetch_capabilities, summarize_capabilities
+
+caps = fetch_capabilities("http://localhost:8000", api_key="not-needed")
+runtime = summarize_capabilities(caps)
+print(runtime["supports_multimodal"], runtime["default_timeout_seconds"])
+```
+
 ### Embeddings
 
 ```bash
