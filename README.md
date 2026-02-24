@@ -208,6 +208,38 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")
 
 See [Embeddings Guide](docs/guides/embeddings.md) for details on supported models and lazy loading.
 
+## Phase Baseline Results
+
+This fork tracks backend optimization in two internal phases:
+
+- **P0**: API contract and reliability hardening
+- **P1**: runtime mode policy, startup diagnostics, cache policy defaults, and capabilities contract helpers
+
+Benchmark configuration used for comparison:
+
+- Model: `mlx-community/Qwen3-0.6B-8bit`
+- Command: `vllm-mlx bench ... --max-tokens 64 --max-num-seqs 32 --prefill-batch-size 8 --completion-batch-size 16`
+- Prompts: 10
+- Date: 2026-02-24
+
+Raw results:
+
+| Phase | Commit | Total time (s) | Prompts/s | Tokens/s | Throughput (tok/s) |
+|---|---:|---:|---:|---:|---:|
+| upstream baseline | `1fd1c9a` | 1.94 | 5.16 | 330.11 | 366.22 |
+| P0 | `a00ec35` | 1.31 | 7.62 | 487.72 | 541.06 |
+| P1 | `26b143b` | 1.29 | 7.75 | 496.00 | 550.25 |
+
+Delta summary:
+
+| Comparison | Total time | Prompts/s | Tokens/s | Throughput |
+|---|---:|---:|---:|---:|
+| P0 vs upstream | -32.47% | +47.67% | +47.74% | +47.74% |
+| P1 vs upstream | -33.51% | +50.19% | +50.25% | +50.25% |
+| P1 vs P0 | -1.53% | +1.71% | +1.70% | +1.70% |
+
+Detailed benchmark snapshots are stored in `benchmarks/phase-results/`.
+
 ## Documentation
 
 For full documentation, see the [docs](docs/) directory:
