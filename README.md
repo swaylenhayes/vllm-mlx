@@ -1,4 +1,5 @@
-# vLLM-MLX Fork (swaylenhayes/vllm-mlx)
+# vLLM-MLX Fork
+(swaylenhayes/vllm-mlx)
 
 **vLLM-like inference for Apple Silicon** - GPU-accelerated Text, Image, Video & Audio on Mac
 
@@ -7,7 +8,7 @@
 [![Apple Silicon](https://img.shields.io/badge/Apple-Silicon-black.svg)](https://support.apple.com/en-us/HT211814)
 [![GitHub](https://img.shields.io/badge/GitHub-waybarrios%2Fvllm--mlx-blue?logo=github)](https://github.com/waybarrios/vllm-mlx)
 
-## Fork Focus (swaylenhayes/vllm-mlx)
+## Focus of this fork
 
 This repository is a fork of [waybarrios/vllm-mlx](https://github.com/waybarrios/vllm-mlx), focused on backend optimization and reliability improvements for local Apple Silicon inference.
 
