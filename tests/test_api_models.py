@@ -259,6 +259,8 @@ class TestChatCompletion:
             messages=[Message(role="user", content="Hello")],
             temperature=0.5,
             top_p=0.9,
+            frequency_penalty=0.4,
+            repetition_penalty=1.1,
             max_tokens=100,
             stream=True,
             stream_options=StreamOptions(include_usage=True),
@@ -269,6 +271,8 @@ class TestChatCompletion:
             timeout=30.0,
         )
         assert req.temperature == 0.5
+        assert req.frequency_penalty == 0.4
+        assert req.repetition_penalty == 1.1
         assert req.stream is True
         assert req.stream_options.include_usage is True
         assert req.tools is not None
@@ -366,6 +370,16 @@ class TestTextCompletion:
         req = CompletionRequest(model="test-model", prompt="Once upon a time")
         assert req.prompt == "Once upon a time"
         assert req.stream is False
+
+    def test_completion_request_with_penalties(self):
+        req = CompletionRequest(
+            model="test-model",
+            prompt="Once upon a time",
+            frequency_penalty=0.5,
+            repetition_penalty=1.2,
+        )
+        assert req.frequency_penalty == 0.5
+        assert req.repetition_penalty == 1.2
 
     def test_completion_request_list_prompt(self):
         req = CompletionRequest(model="test-model", prompt=["Hello", "World"])

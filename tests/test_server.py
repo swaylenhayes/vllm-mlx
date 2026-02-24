@@ -131,11 +131,15 @@ class TestChatCompletionRequest:
             messages=[Message(role="user", content="Hello")],
             max_tokens=100,
             temperature=0.5,
+            frequency_penalty=0.3,
+            repetition_penalty=1.2,
             stream=True,
         )
 
         assert request.max_tokens == 100
         assert request.temperature == 0.5
+        assert request.frequency_penalty == 0.3
+        assert request.repetition_penalty == 1.2
         assert request.stream is True
 
     def test_request_with_video_params(self):
@@ -165,6 +169,20 @@ class TestCompletionRequest:
         assert request.model == "test-model"
         assert request.prompt == "Once upon a time"
         assert request.max_tokens is None  # uses _default_max_tokens when None
+
+    def test_completion_request_with_penalties(self):
+        """Test completion request with decode penalty controls."""
+        from vllm_mlx.server import CompletionRequest
+
+        request = CompletionRequest(
+            model="test-model",
+            prompt="Once upon a time",
+            frequency_penalty=0.5,
+            repetition_penalty=1.1,
+        )
+
+        assert request.frequency_penalty == 0.5
+        assert request.repetition_penalty == 1.1
 
 
 # =============================================================================
@@ -273,6 +291,22 @@ class TestHelperFunctions:
         processed, images, videos = extract_multimodal_content(messages)
 
         assert len(videos) == 1
+
+    def test_resolve_repetition_penalty_prefers_explicit(self):
+        from vllm_mlx.server import _resolve_repetition_penalty
+
+        assert _resolve_repetition_penalty(1.25, 0.8) == 1.25
+
+    def test_resolve_repetition_penalty_maps_frequency(self):
+        from vllm_mlx.server import _resolve_repetition_penalty
+
+        assert _resolve_repetition_penalty(None, 0.2) == 1.2
+        assert _resolve_repetition_penalty(None, -0.4) == 0.6
+
+    def test_resolve_repetition_penalty_clamps_to_positive(self):
+        from vllm_mlx.server import _resolve_repetition_penalty
+
+        assert _resolve_repetition_penalty(None, -2.0) == 0.01
 
 
 # =============================================================================

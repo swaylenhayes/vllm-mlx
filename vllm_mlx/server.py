@@ -176,6 +176,28 @@ def _resolve_top_p(request_value: float | None) -> float:
     return _FALLBACK_TOP_P
 
 
+def _resolve_repetition_penalty(
+    repetition_penalty: float | None,
+    frequency_penalty: float | None,
+) -> float | None:
+    """
+    Resolve repetition penalty from explicit or OpenAI-style frequency penalty.
+
+    Priority:
+    1) explicit repetition_penalty (passthrough)
+    2) mapped from frequency_penalty (1.0 + frequency_penalty)
+    3) None (backend default)
+    """
+    if repetition_penalty is not None:
+        return repetition_penalty
+    if frequency_penalty is None:
+        return None
+
+    mapped = 1.0 + frequency_penalty
+    # Decoding backends require strictly positive repetition penalty.
+    return max(0.01, mapped)
+
+
 # Global MCP manager
 _mcp_manager = None
 _mcp_executor = None
@@ -1397,6 +1419,10 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
                 max_tokens=request.max_tokens or _default_max_tokens,
                 temperature=_resolve_temperature(request.temperature),
                 top_p=_resolve_top_p(request.top_p),
+                repetition_penalty=_resolve_repetition_penalty(
+                    request.repetition_penalty,
+                    request.frequency_penalty,
+                ),
                 stop=request.stop,
             ),
             raw_request,
@@ -1536,6 +1562,12 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
         "temperature": _resolve_temperature(request.temperature),
         "top_p": _resolve_top_p(request.top_p),
     }
+    repetition_penalty = _resolve_repetition_penalty(
+        request.repetition_penalty,
+        request.frequency_penalty,
+    )
+    if repetition_penalty is not None:
+        chat_kwargs["repetition_penalty"] = repetition_penalty
 
     # Add multimodal content
     if has_media:
@@ -1725,6 +1757,12 @@ async def create_anthropic_message(
         "temperature": openai_request.temperature,
         "top_p": openai_request.top_p,
     }
+    repetition_penalty = _resolve_repetition_penalty(
+        openai_request.repetition_penalty,
+        openai_request.frequency_penalty,
+    )
+    if repetition_penalty is not None:
+        chat_kwargs["repetition_penalty"] = repetition_penalty
 
     if openai_request.tools:
         chat_kwargs["tools"] = convert_tools_for_template(openai_request.tools)
@@ -1885,6 +1923,12 @@ async def _stream_anthropic_messages(
         "temperature": openai_request.temperature,
         "top_p": openai_request.top_p,
     }
+    repetition_penalty = _resolve_repetition_penalty(
+        openai_request.repetition_penalty,
+        openai_request.frequency_penalty,
+    )
+    if repetition_penalty is not None:
+        chat_kwargs["repetition_penalty"] = repetition_penalty
 
     if openai_request.tools:
         chat_kwargs["tools"] = convert_tools_for_template(openai_request.tools)
@@ -2013,11 +2057,16 @@ async def stream_completion(
     request: CompletionRequest,
 ) -> AsyncIterator[str]:
     """Stream completion response."""
+    repetition_penalty = _resolve_repetition_penalty(
+        request.repetition_penalty,
+        request.frequency_penalty,
+    )
     async for output in engine.stream_generate(
         prompt=prompt,
         max_tokens=request.max_tokens or _default_max_tokens,
         temperature=_resolve_temperature(request.temperature),
         top_p=_resolve_top_p(request.top_p),
+        repetition_penalty=repetition_penalty,
         stop=request.stop,
     ):
         data = {

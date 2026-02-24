@@ -469,6 +469,7 @@ class BatchedEngine(BaseEngine):
                 max_tokens=max_tokens,
                 temperature=temperature,
                 top_p=top_p,
+                repetition_penalty=kwargs.get("repetition_penalty"),
             )
 
             return GenerationOutput(
@@ -485,6 +486,7 @@ class BatchedEngine(BaseEngine):
             max_tokens=max_tokens,
             temperature=temperature,
             top_p=top_p,
+            repetition_penalty=kwargs.get("repetition_penalty") or 1.0,
             stop=stop or [],
         )
 
@@ -541,6 +543,7 @@ class BatchedEngine(BaseEngine):
                 max_tokens=max_tokens,
                 temperature=temperature,
                 top_p=top_p,
+                repetition_penalty=kwargs.get("repetition_penalty"),
             )
 
             async for output in self._mllm_scheduler.stream_outputs(request_id):
@@ -561,6 +564,7 @@ class BatchedEngine(BaseEngine):
             max_tokens=max_tokens,
             temperature=temperature,
             top_p=top_p,
+            repetition_penalty=kwargs.get("repetition_penalty") or 1.0,
             stop=stop or [],
         )
 

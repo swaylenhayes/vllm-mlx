@@ -289,6 +289,7 @@ class MLLMScheduler:
             max_tokens=max_tokens,
             temperature=temperature,
             top_p=top_p,
+            repetition_penalty=kwargs.get("repetition_penalty") or 1.0,
         )
 
         request = MLLMRequest(

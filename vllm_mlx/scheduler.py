@@ -15,11 +15,11 @@ import logging
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import mlx.core as mx
 from mlx_lm.generate import BatchGenerator
-from mlx_lm.sample_utils import make_sampler
+from mlx_lm.sample_utils import make_logits_processors, make_sampler
 
 from .memory_cache import MemoryAwarePrefixCache, MemoryCacheConfig
 from .paged_cache import PagedCacheManager
@@ -1181,6 +1181,21 @@ class Scheduler:
 
         return bg
 
+    def _build_logits_processors(
+        self, sampling_params: SamplingParams
+    ) -> List[Callable[[mx.array, mx.array], mx.array]]:
+        """
+        Build per-request logits processors from sampling params.
+
+        We keep sampler recreation keyed to temp/top_p/min_p and pass
+        repetition penalty as a per-request logits processor so requests
+        with different penalties can share the same BatchGenerator.
+        """
+        rp = sampling_params.repetition_penalty
+        if rp is None or rp == 1.0:
+            return []
+        return make_logits_processors(repetition_penalty=rp)
+
     def _make_prompt_cache_save_callback(self):
         """Create a callback that stores prompt-only KV/Mamba cache.
 
@@ -1768,11 +1783,15 @@ class Scheduler:
             # Wrap in try/except: if cache shapes are incompatible
             # (e.g. stale entry after BatchGenerator recreation),
             # fall back to no-cache insert instead of crashing.
+            logits_processors = self._build_logits_processors(
+                request.sampling_params
+            )
             try:
                 uids = self.batch_generator.insert(
                     [tokens_to_process],
                     max_tokens=[request.sampling_params.max_tokens],
                     caches=[cache_to_use] if cache_to_use else None,
+                    logits_processors=[logits_processors],
                 )
             except Exception as e:
                 if cache_to_use is not None:
@@ -1789,6 +1808,7 @@ class Scheduler:
                         [tokens_to_process],
                         max_tokens=[request.sampling_params.max_tokens],
                         caches=None,
+                        logits_processors=[logits_processors],
                     )
                 else:
                     raise

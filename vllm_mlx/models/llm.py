@@ -116,6 +116,17 @@ class MLXLanguageModel:
             top_p=top_p,
         )
 
+    def _create_logits_processors(
+        self,
+        repetition_penalty: float = 1.0,
+    ):
+        """Create optional logits processors for generation."""
+        if repetition_penalty == 1.0:
+            return None
+        from mlx_lm.sample_utils import make_logits_processors
+
+        return make_logits_processors(repetition_penalty=repetition_penalty)
+
     def generate(
         self,
         prompt: str,
@@ -146,6 +157,7 @@ class MLXLanguageModel:
 
         # Create sampler with parameters
         sampler = self._create_sampler(temperature, top_p)
+        logits_processors = self._create_logits_processors(repetition_penalty)
 
         # Generate text
         output_text = generate(
@@ -154,6 +166,7 @@ class MLXLanguageModel:
             prompt=prompt,
             max_tokens=max_tokens,
             sampler=sampler,
+            logits_processors=logits_processors,
             verbose=False,
         )
 
@@ -199,6 +212,7 @@ class MLXLanguageModel:
 
         # Create sampler with parameters
         sampler = self._create_sampler(temperature, top_p)
+        logits_processors = self._create_logits_processors(repetition_penalty)
 
         token_count = 0
         accumulated_text = ""
@@ -209,6 +223,7 @@ class MLXLanguageModel:
             prompt=prompt,
             max_tokens=max_tokens,
             sampler=sampler,
+            logits_processors=logits_processors,
         ):
             token_count += 1
             # response.text is the new token text (not accumulated)

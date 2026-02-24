@@ -74,7 +74,8 @@ client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
 response = client.chat.completions.create(
     model="default",
     messages=[{"role": "user", "content": "Hello!"}],
-    max_tokens=100
+    max_tokens=100,
+    frequency_penalty=0.2,   # OpenAI-style control
 )
 
 # Streaming
@@ -98,9 +99,14 @@ POST /v1/completions
 response = client.completions.create(
     model="default",
     prompt="The capital of France is",
-    max_tokens=50
+    max_tokens=50,
+    frequency_penalty=0.2,
 )
 ```
+
+`frequency_penalty` is supported for OpenAI-compatible requests and mapped to
+backend repetition penalty behavior. You can also send `repetition_penalty`
+directly as an advanced passthrough.
 
 ### Models
 

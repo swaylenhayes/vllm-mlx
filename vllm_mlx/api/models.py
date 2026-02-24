@@ -158,6 +158,11 @@ class ChatCompletionRequest(BaseModel):
     messages: list[Message]
     temperature: float | None = None
     top_p: float | None = None
+    # OpenAI-style frequency penalty. Server maps this to repetition_penalty
+    # for backends that support repetition logits processors.
+    frequency_penalty: float | None = Field(default=None, ge=-2.0, le=2.0)
+    # Native repetition penalty passthrough for backends that support it.
+    repetition_penalty: float | None = Field(default=None, gt=0.0)
     max_tokens: int | None = None
     stream: bool = False
     stream_options: StreamOptions | None = (
@@ -232,6 +237,10 @@ class CompletionRequest(BaseModel):
     prompt: str | list[str]
     temperature: float | None = None
     top_p: float | None = None
+    # OpenAI-style frequency penalty mapped to repetition_penalty by server.
+    frequency_penalty: float | None = Field(default=None, ge=-2.0, le=2.0)
+    # Native repetition penalty passthrough.
+    repetition_penalty: float | None = Field(default=None, gt=0.0)
     max_tokens: int | None = None
     stream: bool = False
     stop: list[str] | None = None
