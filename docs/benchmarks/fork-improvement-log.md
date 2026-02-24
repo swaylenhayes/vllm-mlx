@@ -9,6 +9,41 @@ Rules:
 
 ## Entries
 
+### 2026-02-24 - `d890ef6` (thinking-model validation pass)
+
+- Change:
+  - Validated LiquidAI parser + reasoning/tool parser ordering fix + thinking budget controls together.
+- Measurement status: benchmarked (tool-calling probes)
+- Measurement setup:
+  - Models: `WaveCut LFM2.5-DWQ-4bit`, `LFM2.5-1.2B-Thinking-8bit`, `Nanbeige4.1-3B-8bit`
+  - Runtime profile:
+    - `--localhost --runtime-mode auto --cache-strategy auto`
+    - WaveCut/LFM: `--enable-auto-tool-choice --tool-call-parser liquidai --reasoning-parser qwen3 --max-thinking-tokens 256`
+    - Nanbeige: `--enable-auto-tool-choice --tool-call-parser auto --reasoning-parser qwen3 --max-thinking-tokens 256`
+  - Workload: 9 tool-calling probes per model (3 tools x 3 scenarios)
+- Baseline:
+  - Commit: pre-`d890ef6`
+  - Key metric(s):
+    - WaveCut: `0/9`
+    - LFM-Thinking: `0/9`
+    - Nanbeige4.1: `6/9`
+- Result:
+  - Commit: `d890ef6`
+  - Key metric(s):
+    - WaveCut: `6/9`
+    - LFM-Thinking: `6/9`
+    - Nanbeige4.1: `6/9`
+  - Delta:
+    - WaveCut: `+6`
+    - LFM-Thinking: `+6`
+    - Nanbeige4.1: `0`
+- Caveats:
+  - All three models failed the same ambiguous file-search probe in this set (`6/9` ceiling).
+  - Interpreted as probe/model-capacity limitation at this scale, not parser extraction failure.
+- Links:
+  - Validation summary source: local workspace specs note (2026-02-24)
+  - Prior compatibility overview: [`fork-benefits.md`](fork-benefits.md)
+
 ### 2026-02-24 - `d890ef6`
 
 - Change:

@@ -84,6 +84,16 @@ Latest shipped fork update (not yet reflected in the phase throughput table): `d
 - Adds `--max-thinking-tokens` and request-level `max_thinking_tokens`.
 - Fixes reasoning/tool parser order in streaming and non-streaming paths.
 
+Validation snapshot for `d890ef6` (thinking-model tool calling):
+
+| Model | Before `d890ef6` | After `d890ef6` | Parser |
+|---|---:|---:|---|
+| WaveCut LFM2.5-DWQ-4bit | 0/9 | **6/9** | `liquidai` |
+| LFM2.5-1.2B-Thinking-8bit | 0/9 | **6/9** | `liquidai` |
+| Nanbeige4.1-3B-8bit | 6/9 | **6/9** | `auto` |
+
+Observed ceiling for this validation set was `6/9` due to the same ambiguous file-search probe failing across all three models. Current interpretation: probe-level/model-capacity limitation at this scale, not a parser regression.
+
 Detailed model compatibility notes and re-evaluation summary:
 - [`docs/benchmarks/fork-benefits.md`](docs/benchmarks/fork-benefits.md)
 
