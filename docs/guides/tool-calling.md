@@ -200,6 +200,20 @@ for chunk in stream:
             print(f"Tool call: {tc.function.name}({tc.function.arguments})")
 ```
 
+## Tool-Call Spray Mitigation (I6)
+
+Some thinking models can emit many redundant calls to the same function in one turn (tool-call spray), especially with non-optimal thinking budgets.
+
+Server-side mitigation is now applied automatically in tool-parsing paths:
+
+1. Exact duplicates are removed (`function name + canonical arguments`).
+2. Large same-function bursts are collapsed to the first call (high-threshold guard).
+
+What this means in practice:
+- Single-call workflows become less noisy without frontend-side dedupe logic.
+- Legitimate small multi-tool outputs are preserved.
+- This is a pragmatic safety filter, not semantic ranking of competing calls.
+
 ## Handling Tool Results
 
 After receiving a tool call, execute the function and send the result back:

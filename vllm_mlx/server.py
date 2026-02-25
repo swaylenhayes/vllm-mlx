@@ -339,6 +339,9 @@ _reasoning_parser = None  # ReasoningParser instance when enabled
 _enable_auto_tool_choice: bool = False
 _tool_call_parser: str | None = None  # Parser name: auto, mistral, qwen, llama, hermes
 _tool_parser_instance = None  # Instantiated parser
+# Anti-spray guard for pathological "many calls to same function" outputs.
+# Threshold is intentionally high to avoid impacting legitimate multi-tool flows.
+_tool_call_spray_threshold: int = 8
 _concurrency_tracker = ConcurrencyTracker()
 
 _CONCURRENCY_TRACKED_PATHS = (
@@ -617,6 +620,191 @@ def get_engine() -> BaseEngine:
     return _engine
 
 
+def _canonicalize_tool_arguments(arguments: Any) -> str:
+    """Canonical string form for tool call argument comparison."""
+    if arguments is None:
+        return ""
+
+    if isinstance(arguments, (dict, list)):
+        try:
+            return json.dumps(arguments, sort_keys=True, separators=(",", ":"))
+        except Exception:
+            return str(arguments).strip()
+
+    if isinstance(arguments, str):
+        value = arguments.strip()
+        if not value:
+            return ""
+        try:
+            parsed = json.loads(value)
+            return json.dumps(parsed, sort_keys=True, separators=(",", ":"))
+        except Exception:
+            return value
+
+    return str(arguments).strip()
+
+
+def _tool_call_name(call: ToolCall | dict[str, Any]) -> str:
+    """Extract tool function name from ToolCall object or stream/tool dict."""
+    if isinstance(call, ToolCall):
+        return call.function.name
+    if isinstance(call, dict):
+        fn = call.get("function")
+        if isinstance(fn, dict):
+            return str(fn.get("name", ""))
+        return str(call.get("name", ""))
+    return ""
+
+
+def _tool_call_arguments(call: ToolCall | dict[str, Any]) -> Any:
+    """Extract raw tool arguments from ToolCall object or stream/tool dict."""
+    if isinstance(call, ToolCall):
+        return call.function.arguments
+    if isinstance(call, dict):
+        fn = call.get("function")
+        if isinstance(fn, dict):
+            return fn.get("arguments")
+        return call.get("arguments")
+    return None
+
+
+def _dedupe_tool_calls(
+    tool_calls: list[ToolCall] | list[dict[str, Any]],
+) -> list[ToolCall] | list[dict[str, Any]]:
+    """Remove exact duplicate calls (same function + same canonical arguments)."""
+    seen: set[tuple[str, str]] = set()
+    deduped: list[ToolCall] | list[dict[str, Any]] = []
+
+    for call in tool_calls:
+        name = _tool_call_name(call)
+        args_key = _canonicalize_tool_arguments(_tool_call_arguments(call))
+        key = (name, args_key)
+
+        if name and key in seen:
+            continue
+        if name:
+            seen.add(key)
+        deduped.append(call)
+
+    return deduped
+
+
+def _apply_tool_call_spray_policy(
+    tool_calls: list[ToolCall],
+    *,
+    source: str,
+) -> list[ToolCall]:
+    """
+    Apply anti-spray policy for tool calls.
+
+    Policy:
+    1. Remove exact duplicates by (function, canonical arguments).
+    2. If a large burst remains and every call targets the same function,
+       collapse to the first call.
+    """
+    if not tool_calls:
+        return tool_calls
+
+    original_count = len(tool_calls)
+    deduped = _dedupe_tool_calls(tool_calls)
+    deduped_count = len(deduped)
+    if deduped_count < original_count:
+        logger.info(
+            "Tool-call dedupe (%s): %s -> %s",
+            source,
+            original_count,
+            deduped_count,
+        )
+
+    if deduped_count >= _tool_call_spray_threshold:
+        names = {_tool_call_name(call) for call in deduped if _tool_call_name(call)}
+        if len(names) == 1:
+            fn_name = next(iter(names))
+            logger.warning(
+                "Tool-call spray mitigation (%s): collapsing %s '%s' calls to first call",
+                source,
+                deduped_count,
+                fn_name,
+            )
+            return [deduped[0]]
+
+    return deduped
+
+
+def _normalize_tool_call_delta(
+    call: dict[str, Any],
+    *,
+    index: int,
+) -> dict[str, Any]:
+    """Normalize stream delta tool-call shape to OpenAI-compatible dict."""
+    fn = call.get("function")
+    if isinstance(fn, dict):
+        name = str(fn.get("name", ""))
+        arguments = fn.get("arguments", "")
+    else:
+        name = str(call.get("name", ""))
+        arguments = call.get("arguments", "")
+
+    return {
+        "index": index,
+        "id": call.get("id", f"call_{uuid.uuid4().hex[:8]}"),
+        "type": "function",
+        "function": {
+            "name": name,
+            "arguments": arguments if isinstance(arguments, str) else str(arguments),
+        },
+    }
+
+
+def _apply_tool_call_spray_policy_to_deltas(
+    tool_calls: list[dict[str, Any]],
+    *,
+    source: str,
+) -> list[dict[str, Any]]:
+    """Apply anti-spray policy to streaming tool-call deltas."""
+    if not tool_calls:
+        return tool_calls
+
+    normalized = [_normalize_tool_call_delta(tc, index=i) for i, tc in enumerate(tool_calls)]
+    deduped = _dedupe_tool_calls(normalized)
+    deduped_count = len(deduped)
+
+    if len(normalized) > deduped_count:
+        logger.info(
+            "Tool-call delta dedupe (%s): %s -> %s",
+            source,
+            len(normalized),
+            deduped_count,
+        )
+
+    if deduped_count >= _tool_call_spray_threshold:
+        names = {_tool_call_name(call) for call in deduped if _tool_call_name(call)}
+        if len(names) == 1:
+            fn_name = next(iter(names))
+            logger.warning(
+                "Tool-call spray mitigation (%s): collapsing %s '%s' calls to first call",
+                source,
+                deduped_count,
+                fn_name,
+            )
+            deduped = [deduped[0]]
+
+    return [_normalize_tool_call_delta(tc, index=i) for i, tc in enumerate(deduped)]
+
+
+def _parse_tool_calls_with_mitigation(
+    output_text: str,
+    request_dict: dict[str, Any] | None,
+    *,
+    source: str,
+) -> tuple[str, list[ToolCall] | None]:
+    """Parse tool calls with anti-spray post-processing."""
+    cleaned_text, tool_calls = parse_tool_calls(output_text, request_dict)
+    if not tool_calls:
+        return cleaned_text, None
+    return cleaned_text, _apply_tool_call_spray_policy(tool_calls, source=source)
+
+
 def _parse_tool_calls_with_parser(
     output_text: str, request: ChatCompletionRequest | None = None
 ) -> tuple[str, list | None]:
@@ -639,7 +827,11 @@ def _parse_tool_calls_with_parser(
 
     # If auto tool choice is not enabled, use the generic parser
     if not _enable_auto_tool_choice or not _tool_call_parser:
-        return parse_tool_calls(output_text, request_dict)
+        return _parse_tool_calls_with_mitigation(
+            output_text,
+            request_dict,
+            source="generic",
+        )
 
     # Initialize parser if needed
     if _tool_parser_instance is None:
@@ -656,7 +848,11 @@ def _parse_tool_calls_with_parser(
                 f"Failed to initialize tool parser '{_tool_call_parser}': {e}"
             )
             logger.warning("Falling back to generic parser")
-            return parse_tool_calls(output_text, request_dict)
+            return _parse_tool_calls_with_mitigation(
+                output_text,
+                request_dict,
+                source="fallback-init",
+            )
 
     # Use the configured parser
     try:
@@ -675,14 +871,25 @@ def _parse_tool_calls_with_parser(
                 )
                 for tc in result.tool_calls
             ]
-            return result.content or "", tool_calls
+            return (
+                result.content or "",
+                _apply_tool_call_spray_policy(tool_calls, source="parser"),
+            )
         else:
             # Fallback: specific parser didn't find tool calls,
             # try generic parser which handles more formats (e.g. Nemotron XML)
-            return parse_tool_calls(output_text, request_dict)
+            return _parse_tool_calls_with_mitigation(
+                output_text,
+                request_dict,
+                source="fallback-empty",
+            )
     except Exception as e:
         logger.warning(f"Tool parser error: {e}")
-        return parse_tool_calls(output_text, request_dict)
+        return _parse_tool_calls_with_mitigation(
+            output_text,
+            request_dict,
+            source="fallback-error",
+        )
 
 
 def _detect_native_tool_support() -> bool:
@@ -2363,8 +2570,14 @@ async def stream_chat_completion(
             return None, None, True
 
         if "tool_calls" in tool_result:
-            tool_calls_detected = True
-            return None, tool_result["tool_calls"], False
+            filtered_tool_calls = _apply_tool_call_spray_policy_to_deltas(
+                tool_result["tool_calls"],
+                source="stream-parser",
+            )
+            if filtered_tool_calls:
+                tool_calls_detected = True
+                return None, filtered_tool_calls, False
+            return None, None, False
 
         return tool_result.get("content", ""), None, False
 
@@ -2469,25 +2682,16 @@ async def stream_chat_completion(
     if tool_parser and tool_accumulated_text and not tool_calls_detected and tool_markup_possible:
         result = tool_parser.extract_tool_calls(tool_accumulated_text)
         if result.tools_called:
+            tool_call_deltas = _apply_tool_call_spray_policy_to_deltas(
+                result.tool_calls,
+                source="stream-fallback",
+            )
             tool_chunk = ChatCompletionChunk(
                 id=response_id,
                 model=request.model,
                 choices=[
                     ChatCompletionChunkChoice(
-                        delta=ChatCompletionChunkDelta(
-                            tool_calls=[
-                                {
-                                    "index": i,
-                                    "id": tc["id"],
-                                    "type": "function",
-                                    "function": {
-                                        "name": tc["name"],
-                                        "arguments": tc["arguments"],
-                                    },
-                                }
-                                for i, tc in enumerate(result.tool_calls)
-                            ]
-                        ),
+                        delta=ChatCompletionChunkDelta(tool_calls=tool_call_deltas),
                         finish_reason="tool_calls",
                     )
                 ],

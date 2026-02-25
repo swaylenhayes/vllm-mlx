@@ -96,6 +96,7 @@ Key findings from the latest sweep:
 - Optimal thinking budget is model-specific; there is no single universal value.
 - Wrong budget can cause redundant tool-call spray (13-15 calls) even when score is `9/9`.
 - Cleanest observed production behavior in this set: `LFM-Thinking @ 128`.
+- I6 mitigation now active: exact duplicate tool calls are removed, and large same-function bursts are collapsed to the first call.
 
 Recommended serve profiles for these models:
 
@@ -122,6 +123,7 @@ vllm-mlx serve mlx-community/Nanbeige4.1-3B-8bit \
 Current caveat:
 - Engine-level forced think exit applies to `SimpleEngine` LLM path (`--runtime-mode auto`/`simple` when routed there).
 - Other engine paths keep API-layer thinking-budget handling.
+- Spray mitigation reduces burst noise but does not guarantee the selected call is semantically optimal.
 
 Detailed model compatibility notes and re-evaluation summary:
 - [`docs/benchmarks/fork-benefits.md`](docs/benchmarks/fork-benefits.md)

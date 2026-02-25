@@ -354,6 +354,137 @@ class TestHelperFunctions:
         assert within == "a b"
         assert overflow == "c d"
 
+    def test_tool_call_spray_policy_dedupes_exact_duplicates(self):
+        import vllm_mlx.server as server
+
+        calls = [
+            server.ToolCall(
+                id="call_1",
+                type="function",
+                function=server.FunctionCall(name="search_files", arguments='{"q":"a"}'),
+            ),
+            server.ToolCall(
+                id="call_2",
+                type="function",
+                function=server.FunctionCall(name="search_files", arguments='{"q":"a"}'),
+            ),
+            server.ToolCall(
+                id="call_3",
+                type="function",
+                function=server.FunctionCall(name="search_files", arguments='{"q":"b"}'),
+            ),
+        ]
+
+        filtered = server._apply_tool_call_spray_policy(calls, source="test")
+        assert len(filtered) == 2
+        assert filtered[0].function.arguments == '{"q":"a"}'
+        assert filtered[1].function.arguments == '{"q":"b"}'
+
+    def test_tool_call_spray_policy_collapses_large_single_function_bursts(
+        self, monkeypatch
+    ):
+        import vllm_mlx.server as server
+
+        monkeypatch.setattr(server, "_tool_call_spray_threshold", 4)
+        calls = [
+            server.ToolCall(
+                id=f"call_{i}",
+                type="function",
+                function=server.FunctionCall(
+                    name="search_files", arguments=f'{{"q":"variant_{i}"}}'
+                ),
+            )
+            for i in range(6)
+        ]
+
+        filtered = server._apply_tool_call_spray_policy(calls, source="test")
+        assert len(filtered) == 1
+        assert filtered[0].function.name == "search_files"
+        assert filtered[0].function.arguments == '{"q":"variant_0"}'
+
+    def test_tool_call_spray_policy_keeps_large_multi_function_sets(
+        self, monkeypatch
+    ):
+        import vllm_mlx.server as server
+
+        monkeypatch.setattr(server, "_tool_call_spray_threshold", 4)
+        calls = [
+            server.ToolCall(
+                id="call_1",
+                type="function",
+                function=server.FunctionCall(name="search_files", arguments='{"q":"a"}'),
+            ),
+            server.ToolCall(
+                id="call_2",
+                type="function",
+                function=server.FunctionCall(name="read_file", arguments='{"path":"a.py"}'),
+            ),
+            server.ToolCall(
+                id="call_3",
+                type="function",
+                function=server.FunctionCall(name="search_files", arguments='{"q":"b"}'),
+            ),
+            server.ToolCall(
+                id="call_4",
+                type="function",
+                function=server.FunctionCall(name="read_file", arguments='{"path":"b.py"}'),
+            ),
+            server.ToolCall(
+                id="call_5",
+                type="function",
+                function=server.FunctionCall(name="search_files", arguments='{"q":"c"}'),
+            ),
+        ]
+
+        filtered = server._apply_tool_call_spray_policy(calls, source="test")
+        assert len(filtered) == 5
+
+    def test_parse_tool_calls_with_parser_applies_spray_policy(self, monkeypatch):
+        import vllm_mlx.server as server
+
+        monkeypatch.setattr(server, "_enable_auto_tool_choice", False)
+        monkeypatch.setattr(server, "_tool_call_spray_threshold", 3)
+
+        spray_calls = [
+            server.ToolCall(
+                id=f"call_{i}",
+                type="function",
+                function=server.FunctionCall(
+                    name="search_files", arguments=f'{{"q":"variant_{i}"}}'
+                ),
+            )
+            for i in range(5)
+        ]
+
+        monkeypatch.setattr(server, "parse_tool_calls", lambda *_: ("", spray_calls))
+        _, filtered = server._parse_tool_calls_with_parser("tool output", None)
+
+        assert filtered is not None
+        assert len(filtered) == 1
+        assert filtered[0].function.name == "search_files"
+
+    def test_tool_call_spray_policy_to_deltas_reindexes(self, monkeypatch):
+        import vllm_mlx.server as server
+
+        monkeypatch.setattr(server, "_tool_call_spray_threshold", 4)
+        deltas = [
+            {
+                "index": i + 10,
+                "id": f"call_{i}",
+                "type": "function",
+                "function": {
+                    "name": "search_files",
+                    "arguments": f'{{"q":"variant_{i}"}}',
+                },
+            }
+            for i in range(6)
+        ]
+
+        filtered = server._apply_tool_call_spray_policy_to_deltas(deltas, source="test")
+        assert len(filtered) == 1
+        assert filtered[0]["index"] == 0
+        assert filtered[0]["function"]["name"] == "search_files"
+
     def test_liquidai_tool_parser_on_reasoning_cleaned_content(self, monkeypatch):
         import vllm_mlx.server as server
         from vllm_mlx.reasoning import get_parser
