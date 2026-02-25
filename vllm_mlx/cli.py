@@ -204,6 +204,12 @@ def serve_command(args):
     if args.memory_monitor_interval <= 0:
         print("Error: --memory-monitor-interval must be > 0")
         sys.exit(1)
+    if args.batch_divergence_interval <= 0:
+        print("Error: --batch-divergence-interval must be > 0")
+        sys.exit(1)
+    if args.batch_divergence_threshold <= 0 or args.batch_divergence_threshold > 1:
+        print("Error: --batch-divergence-threshold must be in (0, 1]")
+        sys.exit(1)
 
     # Configure server security settings
     server._api_key = args.api_key
@@ -254,6 +260,15 @@ def serve_command(args):
     server._memory_limit_threshold_pct = args.memory_limit_threshold
     server._memory_action = args.memory_action
     server._memory_monitor_interval_seconds = args.memory_monitor_interval
+    server._batch_divergence_monitor_enabled = args.batch_divergence_monitor
+    server._batch_divergence_interval_seconds = args.batch_divergence_interval
+    server._batch_divergence_threshold = args.batch_divergence_threshold
+    server._batch_divergence_action = args.batch_divergence_action
+    server._batch_divergence_state.configure(
+        enabled=args.batch_divergence_monitor,
+        threshold=args.batch_divergence_threshold,
+        action=args.batch_divergence_action,
+    )
 
     bind_host = _resolve_bind_host(args.host, args.localhost)
     observed_peak = load_observed_peak_concurrency()
@@ -285,6 +300,13 @@ def serve_command(args):
         f"limit={args.memory_limit_threshold:.1f}% "
         f"action={args.memory_action} "
         f"interval={args.memory_monitor_interval:.1f}s"
+    )
+    print(
+        "  Batch divergence: "
+        f"enabled={args.batch_divergence_monitor} "
+        f"threshold={args.batch_divergence_threshold:.2f} "
+        f"action={args.batch_divergence_action} "
+        f"interval={args.batch_divergence_interval:.1f}s"
     )
     if args.enable_auto_tool_choice:
         print(f"  Tool calling: ENABLED (parser: {args.tool_call_parser})")
@@ -1017,6 +1039,33 @@ Examples:
         type=float,
         default=5.0,
         help="Memory monitor polling interval in seconds (default: 5.0)",
+    )
+    serve_parser.add_argument(
+        "--batch-divergence-monitor",
+        action="store_true",
+        help="Enable periodic batch divergence probes (serial vs concurrent).",
+    )
+    serve_parser.add_argument(
+        "--batch-divergence-interval",
+        type=float,
+        default=300.0,
+        help="Batch divergence probe interval in seconds (default: 300.0)",
+    )
+    serve_parser.add_argument(
+        "--batch-divergence-threshold",
+        type=float,
+        default=0.95,
+        help="Minimum token agreement before divergence warning (0-1, default: 0.95)",
+    )
+    serve_parser.add_argument(
+        "--batch-divergence-action",
+        type=str,
+        default="warn",
+        choices=["warn", "serialize"],
+        help=(
+            "Action when divergence exceeds threshold: "
+            "warn or serialize tracked inference routes."
+        ),
     )
     serve_parser.add_argument(
         "--timeout",

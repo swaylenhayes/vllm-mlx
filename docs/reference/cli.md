@@ -30,6 +30,10 @@ vllm-mlx serve <model> [options]
 | `--memory-limit-threshold` | Memory limit threshold (% of system memory) | 85.0 |
 | `--memory-action` | Memory limit action (`warn`, `reduce-context`, `reject-new`) | warn |
 | `--memory-monitor-interval` | Memory monitor polling interval in seconds | 5.0 |
+| `--batch-divergence-monitor` | Enable periodic serial-vs-concurrent divergence probes | False |
+| `--batch-divergence-interval` | Batch divergence probe interval in seconds | 300.0 |
+| `--batch-divergence-threshold` | Minimum token agreement before divergence warning (0-1) | 0.95 |
+| `--batch-divergence-action` | Divergence action (`warn`, `serialize`) | warn |
 | `--timeout` | Request timeout in seconds | 300 |
 | `--continuous-batching` | Enable batching for multi-user | False |
 | `--cache-memory-mb` | Cache memory limit in MB | Auto |

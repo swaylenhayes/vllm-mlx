@@ -260,6 +260,123 @@ class MemoryPressureState:
             return self._reject_new
 
 
+class BatchDivergenceState:
+    """Thread-safe state for batch divergence probes and mitigation policy."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._enabled: bool = False
+        self._threshold: float = 0.95
+        self._action: str = "warn"  # warn | serialize
+        self._model_name: str | None = None
+        self._engine_type: str = "unknown"
+        self._sample_count: int = 0
+        self._last_checked_epoch: float | None = None
+        self._last_token_agreement: float | None = None
+        self._last_exact_match: bool | None = None
+        self._last_serial_latency_s: float | None = None
+        self._last_concurrent_latency_s: float | None = None
+        self._status: str = "unknown"  # pass | warning | unknown
+        self._detail: str = "No probe samples collected yet."
+        self._error: str | None = None
+
+    def configure(self, *, enabled: bool, threshold: float, action: str) -> None:
+        with self._lock:
+            self._enabled = enabled
+            self._threshold = threshold
+            self._action = action
+            if not enabled:
+                self._status = "pass"
+                self._detail = "Batch divergence monitor disabled."
+                self._error = None
+
+    def reset(self, *, model_name: str | None, engine_type: str) -> None:
+        with self._lock:
+            self._model_name = model_name
+            self._engine_type = engine_type
+            self._sample_count = 0
+            self._last_checked_epoch = None
+            self._last_token_agreement = None
+            self._last_exact_match = None
+            self._last_serial_latency_s = None
+            self._last_concurrent_latency_s = None
+            self._status = "unknown"
+            self._detail = "No probe samples collected yet."
+            self._error = None
+
+    def update_probe(
+        self,
+        *,
+        token_agreement: float,
+        exact_match: bool,
+        serial_latency_s: float,
+        concurrent_latency_s: float,
+    ) -> None:
+        with self._lock:
+            self._sample_count += 1
+            self._last_checked_epoch = time.time()
+            self._last_token_agreement = token_agreement
+            self._last_exact_match = exact_match
+            self._last_serial_latency_s = serial_latency_s
+            self._last_concurrent_latency_s = concurrent_latency_s
+            self._error = None
+
+            if token_agreement < self._threshold:
+                self._status = "warning"
+                self._detail = (
+                    f"Token agreement {token_agreement * 100:.2f}% is below "
+                    f"threshold {self._threshold * 100:.2f}%."
+                )
+            else:
+                self._status = "pass"
+                self._detail = (
+                    f"Token agreement {token_agreement * 100:.2f}% meets "
+                    f"threshold {self._threshold * 100:.2f}%."
+                )
+
+    def update_info(self, *, status: str, detail: str, error: str | None = None) -> None:
+        with self._lock:
+            self._last_checked_epoch = time.time()
+            self._status = status
+            self._detail = detail
+            self._error = error
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            serialize_active = (
+                self._enabled
+                and self._action == "serialize"
+                and self._status == "warning"
+                and self._engine_type == "batched"
+            )
+            return {
+                "enabled": self._enabled,
+                "threshold": self._threshold,
+                "action": self._action,
+                "model_name": self._model_name,
+                "engine_type": self._engine_type,
+                "sample_count": self._sample_count,
+                "last_checked_epoch": self._last_checked_epoch,
+                "last_token_agreement": self._last_token_agreement,
+                "last_exact_match": self._last_exact_match,
+                "last_serial_latency_s": self._last_serial_latency_s,
+                "last_concurrent_latency_s": self._last_concurrent_latency_s,
+                "status": self._status,
+                "detail": self._detail,
+                "error": self._error,
+                "serialize_active": serialize_active,
+            }
+
+    def should_serialize(self) -> bool:
+        with self._lock:
+            return (
+                self._enabled
+                and self._action == "serialize"
+                and self._status == "warning"
+                and self._engine_type == "batched"
+            )
+
+
 _KNOWN_BUGS_PATH = Path(__file__).resolve().parent / "data" / "known_bugs.yaml"
 _memory_state = MemoryPressureState()
 _memory_monitor_task: asyncio.Task | None = None
@@ -267,6 +384,17 @@ _memory_warn_threshold_pct: float = 70.0
 _memory_limit_threshold_pct: float = 85.0
 _memory_action: str = "warn"  # warn | reduce-context | reject-new
 _memory_monitor_interval_seconds: float = 5.0
+_batch_divergence_state = BatchDivergenceState()
+_batch_divergence_monitor_task: asyncio.Task | None = None
+_batch_divergence_monitor_enabled: bool = False
+_batch_divergence_interval_seconds: float = 300.0
+_batch_divergence_threshold: float = 0.95
+_batch_divergence_action: str = "warn"  # warn | serialize
+_batch_divergence_probe_primary_prompt: str = "Return exactly: READY"
+_batch_divergence_probe_distractor_prompt: str = (
+    "Give a one-line definition of deterministic decoding."
+)
+_batch_serialize_lock: asyncio.Lock | None = None
 
 
 def _resolve_temperature(request_value: float | None) -> float:
@@ -513,6 +641,7 @@ def _get_cache_dir() -> str:
 async def lifespan(app: FastAPI):
     """FastAPI lifespan for startup/shutdown events."""
     global _engine, _mcp_manager, _memory_monitor_task
+    global _batch_divergence_monitor_task, _batch_serialize_lock
 
     # Startup: Start engine if loaded (needed for BatchedEngine in uvicorn's event loop)
     if _engine is not None and hasattr(_engine, "_loaded") and not _engine._loaded:
@@ -530,6 +659,12 @@ async def lifespan(app: FastAPI):
     # Start background memory monitor for pressure guardrails.
     if _memory_monitor_task is None or _memory_monitor_task.done():
         _memory_monitor_task = asyncio.create_task(_memory_monitor_loop())
+    if _batch_serialize_lock is None:
+        _batch_serialize_lock = asyncio.Lock()
+    if _batch_divergence_monitor_task is None or _batch_divergence_monitor_task.done():
+        _batch_divergence_monitor_task = asyncio.create_task(
+            _batch_divergence_monitor_loop()
+        )
 
     yield
 
@@ -566,6 +701,12 @@ async def lifespan(app: FastAPI):
         with contextlib.suppress(asyncio.CancelledError):
             await _memory_monitor_task
         _memory_monitor_task = None
+    if _batch_divergence_monitor_task is not None:
+        _batch_divergence_monitor_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _batch_divergence_monitor_task
+        _batch_divergence_monitor_task = None
+    _batch_serialize_lock = None
 
 
 app = FastAPI(
@@ -589,14 +730,25 @@ async def track_runtime_concurrency(request: Request, call_next):
                 "memory_pressure": snapshot.get("pressure"),
             },
         )
-    if should_track:
-        _concurrency_tracker.enter()
-    try:
-        response = await call_next(request)
-    finally:
+
+    async def _invoke() -> Response:
         if should_track:
-            _concurrency_tracker.exit()
-    return response
+            _concurrency_tracker.enter()
+        try:
+            return await call_next(request)
+        finally:
+            if should_track:
+                _concurrency_tracker.exit()
+
+    if (
+        should_track
+        and _batch_divergence_state.should_serialize()
+        and _batch_serialize_lock is not None
+    ):
+        async with _batch_serialize_lock:
+            return await _invoke()
+
+    return await _invoke()
 
 
 security = HTTPBearer(auto_error=False)
@@ -1097,6 +1249,7 @@ def load_model(
         force_mllm: Force loading as MLLM even if not auto-detected
     """
     global _engine, _model_name, _default_max_tokens, _tool_parser_instance
+    global _batch_divergence_state
 
     _default_max_tokens = max_tokens
     _model_name = model_name
@@ -1117,6 +1270,7 @@ def load_model(
         # BatchedEngine will be started in lifespan (uvicorn's event loop)
         # Just log for now
         logger.info(f"Model loaded (batched mode): {model_name}")
+        _batch_divergence_state.reset(model_name=model_name, engine_type="batched")
     else:
         logger.info(f"Loading model with SimpleEngine: {model_name}")
         _engine = SimpleEngine(model_name=model_name, force_mllm=force_mllm)
@@ -1127,6 +1281,7 @@ def load_model(
         loop.run_until_complete(_engine.start())
         model_type = "MLLM" if _engine.is_mllm else "LLM"
         logger.info(f"{model_type} model loaded (simple mode): {model_name}")
+        _batch_divergence_state.reset(model_name=model_name, engine_type="simple")
 
     # Set native tool format support on the engine (thread-safe via instance property)
     _engine.preserve_native_tool_format = _detect_native_tool_support()
@@ -1323,6 +1478,121 @@ async def _memory_monitor_loop() -> None:
                 _memory_action,
             )
         await asyncio.sleep(max(1.0, _memory_monitor_interval_seconds))
+
+
+def _token_agreement_rate(a: str, b: str) -> float:
+    """Token-level agreement between two decoded texts."""
+    ta = a.split()
+    tb = b.split()
+    max_len = max(len(ta), len(tb), 1)
+    matches = 0
+    for idx in range(max_len):
+        tok_a = ta[idx] if idx < len(ta) else None
+        tok_b = tb[idx] if idx < len(tb) else None
+        if tok_a == tok_b:
+            matches += 1
+    return matches / max_len
+
+
+async def _run_batch_divergence_probe_once() -> dict[str, Any]:
+    """Run one serial-vs-concurrent probe and return metrics."""
+    if _engine is None:
+        raise RuntimeError("Model not loaded.")
+
+    probe_kwargs = {
+        "max_tokens": min(64, _default_max_tokens),
+        "temperature": 0.0,
+        "top_p": 1.0,
+    }
+    primary_messages = [{"role": "user", "content": _batch_divergence_probe_primary_prompt}]
+    distractor_messages = [
+        {"role": "user", "content": _batch_divergence_probe_distractor_prompt}
+    ]
+
+    serial_start = time.perf_counter()
+    serial_output = await _engine.chat(messages=primary_messages, **probe_kwargs)
+    serial_latency_s = time.perf_counter() - serial_start
+
+    concurrent_start = time.perf_counter()
+    concurrent_primary_output, _ = await asyncio.gather(
+        _engine.chat(messages=primary_messages, **probe_kwargs),
+        _engine.chat(messages=distractor_messages, **probe_kwargs),
+    )
+    concurrent_latency_s = time.perf_counter() - concurrent_start
+
+    serial_text = clean_output_text(getattr(serial_output, "text", "") or "")
+    concurrent_text = clean_output_text(
+        getattr(concurrent_primary_output, "text", "") or ""
+    )
+    token_agreement = _token_agreement_rate(serial_text, concurrent_text)
+
+    return {
+        "token_agreement": token_agreement,
+        "exact_match": serial_text == concurrent_text,
+        "serial_latency_s": serial_latency_s,
+        "concurrent_latency_s": concurrent_latency_s,
+    }
+
+
+async def _batch_divergence_monitor_loop() -> None:
+    """Background loop that tracks batch divergence in batched runtime mode."""
+    while True:
+        sleep_s = max(5.0, _batch_divergence_interval_seconds)
+        try:
+            if not _batch_divergence_monitor_enabled:
+                _batch_divergence_state.update_info(
+                    status="pass",
+                    detail="Batch divergence monitor disabled.",
+                )
+                await asyncio.sleep(sleep_s)
+                continue
+
+            if _engine is None:
+                _batch_divergence_state.update_info(
+                    status="warning",
+                    detail="Model not loaded; cannot run batch divergence probe.",
+                )
+                await asyncio.sleep(sleep_s)
+                continue
+
+            engine_stats = _engine.get_stats()
+            engine_type = str(engine_stats.get("engine_type", "unknown"))
+            if engine_type != "batched":
+                _batch_divergence_state.update_info(
+                    status="pass",
+                    detail=(
+                        f"Runtime mode is {engine_type}; batch divergence probing "
+                        "is only applicable in batched mode."
+                    ),
+                )
+                await asyncio.sleep(sleep_s)
+                continue
+
+            probe = await _run_batch_divergence_probe_once()
+            _batch_divergence_state.update_probe(
+                token_agreement=float(probe["token_agreement"]),
+                exact_match=bool(probe["exact_match"]),
+                serial_latency_s=float(probe["serial_latency_s"]),
+                concurrent_latency_s=float(probe["concurrent_latency_s"]),
+            )
+
+            if probe["token_agreement"] < _batch_divergence_threshold:
+                logger.warning(
+                    "[batch-divergence] agreement=%.2f%% threshold=%.2f%% action=%s",
+                    probe["token_agreement"] * 100.0,
+                    _batch_divergence_threshold * 100.0,
+                    _batch_divergence_action,
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            _batch_divergence_state.update_info(
+                status="warning",
+                detail=f"Batch divergence probe failed: {e}",
+                error=str(e),
+            )
+            logger.warning("[batch-divergence] probe failed: %s", e, exc_info=True)
+        await asyncio.sleep(sleep_s)
 
 
 def _resolve_effective_max_tokens(request_value: int | None) -> int:
@@ -1609,6 +1879,71 @@ def _check_version_status() -> DiagnosticCheck:
     )
 
 
+def _check_batch_invariance_status() -> DiagnosticCheck:
+    """Run diagnostics check for batch divergence monitor state."""
+    snapshot = _batch_divergence_state.snapshot()
+    metadata = {
+        "enabled": snapshot.get("enabled"),
+        "threshold": snapshot.get("threshold"),
+        "action": snapshot.get("action"),
+        "engine_type": snapshot.get("engine_type"),
+        "sample_count": snapshot.get("sample_count"),
+        "last_checked_epoch": snapshot.get("last_checked_epoch"),
+        "last_token_agreement": snapshot.get("last_token_agreement"),
+        "last_exact_match": snapshot.get("last_exact_match"),
+        "last_serial_latency_s": snapshot.get("last_serial_latency_s"),
+        "last_concurrent_latency_s": snapshot.get("last_concurrent_latency_s"),
+        "serialize_active": snapshot.get("serialize_active"),
+    }
+    if snapshot.get("error"):
+        metadata["error"] = snapshot.get("error")
+
+    if not snapshot.get("enabled"):
+        return DiagnosticCheck(
+            status="pass",
+            detail="Batch divergence monitor disabled.",
+            metadata=metadata,
+        )
+
+    if snapshot.get("engine_type") != "batched":
+        return DiagnosticCheck(
+            status="pass",
+            detail=(
+                f"Runtime mode is {snapshot.get('engine_type')}; "
+                "batch divergence check is not applicable."
+            ),
+            metadata=metadata,
+        )
+
+    token_agreement = snapshot.get("last_token_agreement")
+    sample_count = int(snapshot.get("sample_count") or 0)
+    threshold = float(snapshot.get("threshold") or _batch_divergence_threshold)
+    if sample_count <= 0 or token_agreement is None:
+        return DiagnosticCheck(
+            status="warning",
+            detail="Batch divergence monitor enabled, awaiting first probe sample.",
+            metadata=metadata,
+        )
+
+    if float(token_agreement) < threshold:
+        detail = (
+            f"Batch divergence detected: agreement {float(token_agreement) * 100.0:.2f}% "
+            f"below threshold {threshold * 100.0:.2f}%."
+        )
+        if snapshot.get("serialize_active"):
+            detail += " Serialize mitigation is active for tracked inference routes."
+        return DiagnosticCheck(status="warning", detail=detail, metadata=metadata)
+
+    return DiagnosticCheck(
+        status="pass",
+        detail=(
+            f"Batch divergence within threshold: agreement "
+            f"{float(token_agreement) * 100.0:.2f}%."
+        ),
+        metadata=metadata,
+    )
+
+
 def _aggregate_diagnostic_status(checks: dict[str, DiagnosticCheck]) -> str:
     """Reduce per-check states to top-level health status."""
     states = {c.status for c in checks.values()}
@@ -1674,6 +2009,7 @@ async def health_diagnostics() -> DiagnosticsHealthResponse:
     memory_check, memory_payload = _check_memory_status()
     checks["memory"] = memory_check
     checks["version"] = _check_version_status()
+    checks["batch_invariance"] = _check_batch_invariance_status()
 
     return DiagnosticsHealthResponse(
         status=_aggregate_diagnostic_status(checks),
@@ -3492,6 +3828,33 @@ Examples:
         default=5.0,
         help="Memory monitor polling interval in seconds (default: 5.0)",
     )
+    parser.add_argument(
+        "--batch-divergence-monitor",
+        action="store_true",
+        help="Enable periodic batch divergence probes (serial vs concurrent).",
+    )
+    parser.add_argument(
+        "--batch-divergence-interval",
+        type=float,
+        default=300.0,
+        help="Batch divergence probe interval in seconds (default: 300.0)",
+    )
+    parser.add_argument(
+        "--batch-divergence-threshold",
+        type=float,
+        default=0.95,
+        help="Minimum token agreement before divergence warning (0-1, default: 0.95)",
+    )
+    parser.add_argument(
+        "--batch-divergence-action",
+        type=str,
+        default="warn",
+        choices=["warn", "serialize"],
+        help=(
+            "Action when divergence exceeds threshold: "
+            "warn or serialize tracked inference routes."
+        ),
+    )
     # Reasoning parser options - choices loaded dynamically from registry
     from .reasoning import list_parsers
 
@@ -3540,6 +3903,8 @@ Examples:
     global _api_key, _default_timeout, _rate_limiter
     global _memory_warn_threshold_pct, _memory_limit_threshold_pct
     global _memory_action, _memory_monitor_interval_seconds
+    global _batch_divergence_monitor_enabled, _batch_divergence_interval_seconds
+    global _batch_divergence_threshold, _batch_divergence_action
     global _default_temperature, _default_top_p, _max_thinking_tokens
     _api_key = args.api_key
     _default_timeout = args.timeout
@@ -3552,10 +3917,23 @@ Examples:
         )
     if args.memory_monitor_interval <= 0:
         raise ValueError("--memory-monitor-interval must be > 0")
+    if args.batch_divergence_interval <= 0:
+        raise ValueError("--batch-divergence-interval must be > 0")
+    if args.batch_divergence_threshold <= 0 or args.batch_divergence_threshold > 1:
+        raise ValueError("--batch-divergence-threshold must be in (0, 1].")
     _memory_warn_threshold_pct = args.memory_warn_threshold
     _memory_limit_threshold_pct = args.memory_limit_threshold
     _memory_action = args.memory_action
     _memory_monitor_interval_seconds = args.memory_monitor_interval
+    _batch_divergence_monitor_enabled = args.batch_divergence_monitor
+    _batch_divergence_interval_seconds = args.batch_divergence_interval
+    _batch_divergence_threshold = args.batch_divergence_threshold
+    _batch_divergence_action = args.batch_divergence_action
+    _batch_divergence_state.configure(
+        enabled=_batch_divergence_monitor_enabled,
+        threshold=_batch_divergence_threshold,
+        action=_batch_divergence_action,
+    )
     if args.default_temperature is not None:
         _default_temperature = args.default_temperature
     if args.default_top_p is not None:
@@ -3587,6 +3965,13 @@ Examples:
         args.memory_limit_threshold,
         args.memory_action,
         args.memory_monitor_interval,
+    )
+    logger.info(
+        "  Batch divergence: enabled=%s threshold=%.2f action=%s interval=%.1fs",
+        args.batch_divergence_monitor,
+        args.batch_divergence_threshold,
+        args.batch_divergence_action,
+        args.batch_divergence_interval,
     )
     logger.info("=" * 60)
 

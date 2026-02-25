@@ -400,6 +400,64 @@ class TestHelperFunctions:
             == "unhealthy"
         )
 
+    def test_batch_divergence_state_serialize_gate(self):
+        from vllm_mlx.server import BatchDivergenceState
+
+        state = BatchDivergenceState()
+        state.configure(enabled=True, threshold=0.95, action="serialize")
+        state.reset(model_name="test-model", engine_type="batched")
+        state.update_probe(
+            token_agreement=0.40,
+            exact_match=False,
+            serial_latency_s=0.1,
+            concurrent_latency_s=0.2,
+        )
+        assert state.should_serialize() is True
+
+    def test_batch_divergence_state_no_serialize_on_warn_action(self):
+        from vllm_mlx.server import BatchDivergenceState
+
+        state = BatchDivergenceState()
+        state.configure(enabled=True, threshold=0.95, action="warn")
+        state.reset(model_name="test-model", engine_type="batched")
+        state.update_probe(
+            token_agreement=0.40,
+            exact_match=False,
+            serial_latency_s=0.1,
+            concurrent_latency_s=0.2,
+        )
+        assert state.should_serialize() is False
+
+    def test_check_batch_invariance_status_warning(self, monkeypatch):
+        import vllm_mlx.server as server
+
+        state = server.BatchDivergenceState()
+        state.configure(enabled=True, threshold=0.95, action="warn")
+        state.reset(model_name="test-model", engine_type="batched")
+        state.update_probe(
+            token_agreement=0.5,
+            exact_match=False,
+            serial_latency_s=0.1,
+            concurrent_latency_s=0.2,
+        )
+        monkeypatch.setattr(server, "_batch_divergence_state", state)
+
+        check = server._check_batch_invariance_status()
+        assert check.status == "warning"
+        assert check.metadata is not None
+        assert check.metadata["sample_count"] >= 1
+
+    def test_check_batch_invariance_status_disabled(self, monkeypatch):
+        import vllm_mlx.server as server
+
+        state = server.BatchDivergenceState()
+        state.configure(enabled=False, threshold=0.95, action="warn")
+        monkeypatch.setattr(server, "_batch_divergence_state", state)
+
+        check = server._check_batch_invariance_status()
+        assert check.status == "pass"
+        assert "disabled" in check.detail.lower()
+
     def test_tool_call_spray_policy_dedupes_exact_duplicates(self):
         import vllm_mlx.server as server
 

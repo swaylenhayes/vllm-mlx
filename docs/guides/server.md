@@ -41,6 +41,10 @@ vllm-mlx serve mlx-community/Llama-3.2-3B-Instruct-4bit --port 8000 --continuous
 | `--memory-limit-threshold` | Memory limit threshold (% of system memory) | 85.0 |
 | `--memory-action` | Memory limit action (`warn`, `reduce-context`, `reject-new`) | warn |
 | `--memory-monitor-interval` | Memory monitor polling interval (seconds) | 5.0 |
+| `--batch-divergence-monitor` | Enable periodic serial-vs-concurrent divergence probes | False |
+| `--batch-divergence-interval` | Batch divergence probe interval (seconds) | 300.0 |
+| `--batch-divergence-threshold` | Minimum token agreement before divergence warning (0-1) | 0.95 |
+| `--batch-divergence-action` | Divergence action (`warn`, `serialize`) | warn |
 | `--timeout` | Request timeout in seconds | 300 |
 | `--runtime-mode` | Runtime mode policy (`auto`, `simple`, `batched`) | auto |
 | `--runtime-mode-threshold` | Auto mode threshold for selecting batched mode | 2 |
@@ -174,11 +178,19 @@ Returns lightweight quality diagnostics for the loaded model:
 - EOS/template consistency status
 - memory pressure status
 - version/known-issue status
+- batch invariance monitor status (serial-vs-concurrent token agreement)
 
 When memory pressure crosses thresholds, server behavior follows `--memory-action`:
 - `warn`: continue serving and log warnings
 - `reduce-context`: reduce max tokens for new requests by 50%
 - `reject-new`: return HTTP 503 for new inference requests
+
+When batch divergence monitor is enabled and agreement falls below
+`--batch-divergence-threshold`, behavior follows `--batch-divergence-action`:
+- `warn`: keep serving normally and report degraded diagnostics
+- `serialize`: serialize tracked inference routes (`/v1/chat/completions`,
+  `/v1/completions`, `/v1/messages`, `/v1/embeddings`) to reduce live
+  batch-composition effects
 
 Authentication behavior follows server auth policy:
 - when `--api-key` is disabled, diagnostics is publicly accessible
