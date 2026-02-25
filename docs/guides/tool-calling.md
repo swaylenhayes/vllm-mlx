@@ -210,7 +210,7 @@ Server-side mitigation is now applied automatically in tool-parsing paths:
 2. Large same-function bursts are collapsed to the first call (high-threshold guard).
 
 What this means in practice:
-- Single-call workflows become less noisy without frontend-side dedupe logic.
+- Single-call workflows become less noisy without client-side dedupe logic.
 - Legitimate small multi-tool outputs are preserved.
 - This is a pragmatic safety filter, not semantic ranking of competing calls.
 
