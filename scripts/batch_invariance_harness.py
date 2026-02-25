@@ -47,6 +47,10 @@ Z_SCORE_BY_CONFIDENCE = {
 }
 
 
+class HarnessRequestError(RuntimeError):
+    """Raised when probe requests fail after retry."""
+
+
 @dataclass
 class ProbeResult:
     prompt: str
@@ -81,6 +85,8 @@ def _run_probe(
     max_tokens: int,
     timeout_s: float,
     api_key: str | None,
+    retries: int,
+    retry_backoff_s: float,
 ) -> ProbeResult:
     payload: dict[str, Any] = {
         "model": model,
@@ -90,23 +96,38 @@ def _run_probe(
         "max_tokens": max_tokens,
     }
     url = f"{base_url.rstrip('/')}/v1/chat/completions"
-    t0 = time.perf_counter()
-    response = requests.post(
-        url,
-        headers=_headers(api_key),
-        json=payload,
-        timeout=timeout_s,
-    )
-    latency_s = time.perf_counter() - t0
-    response.raise_for_status()
-    body = response.json()
-    choice = body["choices"][0]
-    message = choice.get("message", {})
-    return ProbeResult(
-        prompt=prompt,
-        output=message.get("content") or "",
-        latency_s=latency_s,
-        finish_reason=choice.get("finish_reason"),
+    attempts = max(1, retries + 1)
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            t0 = time.perf_counter()
+            response = requests.post(
+                url,
+                headers=_headers(api_key),
+                json=payload,
+                timeout=timeout_s,
+            )
+            latency_s = time.perf_counter() - t0
+            response.raise_for_status()
+            body = response.json()
+            choice = body["choices"][0]
+            message = choice.get("message", {})
+            return ProbeResult(
+                prompt=prompt,
+                output=message.get("content") or "",
+                latency_s=latency_s,
+                finish_reason=choice.get("finish_reason"),
+            )
+        except (requests.RequestException, KeyError, IndexError, ValueError) as exc:
+            last_error = exc
+            if attempt >= attempts:
+                break
+            sleep_s = retry_backoff_s * attempt
+            if sleep_s > 0:
+                time.sleep(sleep_s)
+    raise HarnessRequestError(
+        f"Request failed after {attempts} attempt(s) for prompt: {prompt!r}. "
+        f"Last error: {last_error}"
     )
 
 
@@ -135,6 +156,8 @@ def _run_serial(
     max_tokens: int,
     timeout_s: float,
     api_key: str | None,
+    retries: int,
+    retry_backoff_s: float,
 ) -> list[ProbeResult]:
     results: list[ProbeResult] = []
     for prompt in prompts:
@@ -146,6 +169,8 @@ def _run_serial(
                 max_tokens=max_tokens,
                 timeout_s=timeout_s,
                 api_key=api_key,
+                retries=retries,
+                retry_backoff_s=retry_backoff_s,
             )
         )
     return results
@@ -160,6 +185,8 @@ def _run_concurrent(
     timeout_s: float,
     api_key: str | None,
     concurrency: int,
+    retries: int,
+    retry_backoff_s: float,
 ) -> list[ProbeResult]:
     results: list[ProbeResult] = [None] * len(prompts)  # type: ignore[assignment]
     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
@@ -173,11 +200,27 @@ def _run_concurrent(
                 max_tokens=max_tokens,
                 timeout_s=timeout_s,
                 api_key=api_key,
+                retries=retries,
+                retry_backoff_s=retry_backoff_s,
             )
             futures[fut] = idx
+        errors: list[str] = []
         for fut in concurrent.futures.as_completed(futures):
             idx = futures[fut]
-            results[idx] = fut.result()
+            try:
+                results[idx] = fut.result()
+            except Exception as exc:
+                errors.append(f"[prompt_index={idx}] {exc}")
+        if errors:
+            head = "\n".join(errors[:3])
+            tail_note = ""
+            if len(errors) > 3:
+                tail_note = f"\n... and {len(errors) - 3} more error(s)"
+            raise HarnessRequestError(
+                "Concurrent probe run failed. This usually means the server is down, "
+                "restarting, or overloaded under concurrency.\n"
+                f"{head}{tail_note}"
+            )
     return results
 
 
@@ -217,6 +260,8 @@ def _run_single_pass(
     api_key: str | None,
     concurrency: int,
     run_index: int,
+    retries: int,
+    retry_backoff_s: float,
 ) -> dict[str, Any]:
     serial = _run_serial(
         prompts,
@@ -225,6 +270,8 @@ def _run_single_pass(
         max_tokens=max_tokens,
         timeout_s=timeout_s,
         api_key=api_key,
+        retries=retries,
+        retry_backoff_s=retry_backoff_s,
     )
     concurrent = _run_concurrent(
         prompts,
@@ -234,6 +281,8 @@ def _run_single_pass(
         timeout_s=timeout_s,
         api_key=api_key,
         concurrency=concurrency,
+        retries=retries,
+        retry_backoff_s=retry_backoff_s,
     )
 
     exact_matches = 0
@@ -339,6 +388,18 @@ def main() -> None:
         default=0.0,
         help="Optional seconds to sleep between repeated runs",
     )
+    parser.add_argument(
+        "--request-retries",
+        type=int,
+        default=2,
+        help="Number of retries per failed probe request",
+    )
+    parser.add_argument(
+        "--retry-backoff",
+        type=float,
+        default=0.5,
+        help="Backoff base seconds between retries",
+    )
     args = parser.parse_args()
 
     prompts = _load_prompts(args.prompts_file)
@@ -347,21 +408,38 @@ def main() -> None:
         raise ValueError("--runs must be >= 1")
     if args.run_cooldown < 0:
         raise ValueError("--run-cooldown must be >= 0")
+    if args.request_retries < 0:
+        raise ValueError("--request-retries must be >= 0")
+    if args.retry_backoff < 0:
+        raise ValueError("--retry-backoff must be >= 0")
 
     run_reports: list[dict[str, Any]] = []
     for run_index in range(args.runs):
         print(f"Run {run_index + 1}/{args.runs}: serial pass on {len(prompts)} prompts...")
         print(f"Run {run_index + 1}/{args.runs}: concurrent pass (concurrency={concurrency})...")
-        run_report = _run_single_pass(
-            prompts,
-            base_url=args.base_url,
-            model=args.model,
-            max_tokens=args.max_tokens,
-            timeout_s=args.timeout,
-            api_key=args.api_key,
-            concurrency=concurrency,
-            run_index=run_index,
-        )
+        try:
+            run_report = _run_single_pass(
+                prompts,
+                base_url=args.base_url,
+                model=args.model,
+                max_tokens=args.max_tokens,
+                timeout_s=args.timeout,
+                api_key=args.api_key,
+                concurrency=concurrency,
+                run_index=run_index,
+                retries=args.request_retries,
+                retry_backoff_s=args.retry_backoff,
+            )
+        except HarnessRequestError as exc:
+            raise SystemExit(
+                "Harness failed due to request/connection errors.\n"
+                f"{exc}\n\n"
+                "Next checks:\n"
+                "1) Confirm server is still listening on --base-url.\n"
+                "2) Check server logs for OOM/restart/crash during concurrent pass.\n"
+                "3) Retry with lower concurrency (e.g., --concurrency 4).\n"
+                "4) Optionally reduce --max-tokens for stability."
+            ) from exc
         run_reports.append(run_report)
         print(
             f"Run {run_index + 1}/{args.runs}: "
