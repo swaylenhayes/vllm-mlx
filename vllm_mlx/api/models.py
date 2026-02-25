@@ -11,6 +11,7 @@ These models define the request and response schemas for:
 
 import time
 import uuid
+from typing import Any
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -354,6 +355,40 @@ class CapabilitiesResponse(BaseModel):
     auth: CapabilityAuth
     rate_limit: CapabilityRateLimit
     limits: CapabilityLimits
+
+
+# =============================================================================
+# Diagnostics
+# =============================================================================
+
+
+class DiagnosticCheck(BaseModel):
+    """Single diagnostic check result."""
+
+    status: str  # pass | warning | fail | unknown
+    detail: str
+    metadata: dict[str, Any] | None = None
+
+
+class DiagnosticMemory(BaseModel):
+    """Memory diagnostic snapshot."""
+
+    active_gb: float | None = None
+    peak_gb: float | None = None
+    system_gb: float | None = None
+    utilization_pct: float | None = None
+    trend: str = "unknown"  # growing | stable | declining | unknown
+    pressure: str = "unknown"  # normal | elevated | critical | unknown
+
+
+class DiagnosticsHealthResponse(BaseModel):
+    """Response for diagnostic health endpoint."""
+
+    status: str  # healthy | degraded | unhealthy
+    model: str | None = None
+    checks: dict[str, DiagnosticCheck]
+    memory: DiagnosticMemory | None = None
+    timestamp: str
 
 
 # =============================================================================

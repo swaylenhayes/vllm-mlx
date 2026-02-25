@@ -39,6 +39,8 @@ The server provides:
 
 import argparse
 import asyncio
+import contextlib
+import importlib.metadata
 import importlib.util
 import json
 import logging
@@ -50,12 +52,16 @@ import time
 import uuid
 from collections import defaultdict
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated, Any
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
+import psutil
+import yaml
 
 # Import from new modular API
 # Re-export for backwards compatibility with tests
@@ -85,6 +91,9 @@ from .api.models import (
     EmbeddingUsage,
     FunctionCall,
     ImageUrl,  # noqa: F401
+    DiagnosticsHealthResponse,
+    DiagnosticCheck,
+    DiagnosticMemory,
     MCPExecuteRequest,
     MCPExecuteResponse,
     MCPServerInfo,  # noqa: F401
@@ -157,6 +166,107 @@ class ConcurrencyTracker:
     def peak(self) -> int:
         with self._lock:
             return self._peak
+
+
+class MemoryPressureState:
+    """Thread-safe memory pressure state used by diagnostics and request policies."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._active_bytes: int | None = None
+        self._peak_bytes: int | None = None
+        self._system_bytes: int | None = None
+        self._utilization_pct: float | None = None
+        self._trend: str = "unknown"
+        self._pressure: str = "unknown"
+        self._max_tokens_factor: float = 1.0
+        self._reject_new: bool = False
+        self._last_updated_epoch: float | None = None
+        self._prev_active_bytes: int | None = None
+
+    def update(
+        self,
+        *,
+        active_bytes: int | None,
+        peak_bytes: int | None,
+        system_bytes: int | None,
+        warn_threshold_pct: float,
+        limit_threshold_pct: float,
+        action: str,
+    ) -> None:
+        with self._lock:
+            self._active_bytes = active_bytes
+            self._peak_bytes = peak_bytes
+            self._system_bytes = system_bytes
+            self._last_updated_epoch = time.time()
+
+            utilization_pct = None
+            if (
+                active_bytes is not None
+                and system_bytes is not None
+                and system_bytes > 0
+            ):
+                utilization_pct = (active_bytes / system_bytes) * 100.0
+            self._utilization_pct = utilization_pct
+
+            if active_bytes is not None and self._prev_active_bytes is not None:
+                delta = active_bytes - self._prev_active_bytes
+                drift_floor = 256 * 1024 * 1024  # 256MB
+                if abs(delta) <= drift_floor:
+                    trend = "stable"
+                else:
+                    trend = "growing" if delta > 0 else "declining"
+            else:
+                trend = "unknown"
+            self._trend = trend
+            self._prev_active_bytes = active_bytes
+
+            if utilization_pct is None:
+                pressure = "unknown"
+            elif utilization_pct >= limit_threshold_pct:
+                pressure = "critical"
+            elif utilization_pct >= warn_threshold_pct:
+                pressure = "elevated"
+            else:
+                pressure = "normal"
+            self._pressure = pressure
+
+            # Enforce configured action policy for new requests.
+            self._max_tokens_factor = (
+                0.5 if action == "reduce-context" and pressure == "critical" else 1.0
+            )
+            self._reject_new = action == "reject-new" and pressure == "critical"
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "active_bytes": self._active_bytes,
+                "peak_bytes": self._peak_bytes,
+                "system_bytes": self._system_bytes,
+                "utilization_pct": self._utilization_pct,
+                "trend": self._trend,
+                "pressure": self._pressure,
+                "max_tokens_factor": self._max_tokens_factor,
+                "reject_new": self._reject_new,
+                "last_updated_epoch": self._last_updated_epoch,
+            }
+
+    def max_tokens_factor(self) -> float:
+        with self._lock:
+            return self._max_tokens_factor
+
+    def should_reject_new(self) -> bool:
+        with self._lock:
+            return self._reject_new
+
+
+_KNOWN_BUGS_PATH = Path(__file__).resolve().parent / "data" / "known_bugs.yaml"
+_memory_state = MemoryPressureState()
+_memory_monitor_task: asyncio.Task | None = None
+_memory_warn_threshold_pct: float = 70.0
+_memory_limit_threshold_pct: float = 85.0
+_memory_action: str = "warn"  # warn | reduce-context | reject-new
+_memory_monitor_interval_seconds: float = 5.0
 
 
 def _resolve_temperature(request_value: float | None) -> float:
@@ -402,7 +512,7 @@ def _get_cache_dir() -> str:
 
 async def lifespan(app: FastAPI):
     """FastAPI lifespan for startup/shutdown events."""
-    global _engine, _mcp_manager
+    global _engine, _mcp_manager, _memory_monitor_task
 
     # Startup: Start engine if loaded (needed for BatchedEngine in uvicorn's event loop)
     if _engine is not None and hasattr(_engine, "_loaded") and not _engine._loaded:
@@ -416,6 +526,10 @@ async def lifespan(app: FastAPI):
     mcp_config = os.environ.get("VLLM_MLX_MCP_CONFIG")
     if mcp_config:
         await init_mcp(mcp_config)
+
+    # Start background memory monitor for pressure guardrails.
+    if _memory_monitor_task is None or _memory_monitor_task.done():
+        _memory_monitor_task = asyncio.create_task(_memory_monitor_loop())
 
     yield
 
@@ -447,6 +561,11 @@ async def lifespan(app: FastAPI):
     if _engine is not None:
         await _engine.stop()
         logger.info("Engine stopped")
+    if _memory_monitor_task is not None:
+        _memory_monitor_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _memory_monitor_task
+        _memory_monitor_task = None
 
 
 app = FastAPI(
@@ -461,6 +580,15 @@ app = FastAPI(
 async def track_runtime_concurrency(request: Request, call_next):
     """Track concurrency for high-impact inference endpoints."""
     should_track = _should_track_concurrency(request.url.path)
+    if should_track and _memory_state.should_reject_new():
+        snapshot = _memory_state.snapshot()
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "Memory pressure is critical; rejecting new requests.",
+                "memory_pressure": snapshot.get("pressure"),
+            },
+        )
     if should_track:
         _concurrency_tracker.enter()
     try:
@@ -1028,6 +1156,469 @@ def _module_available(module_name: str) -> bool:
     return importlib.util.find_spec(module_name) is not None
 
 
+def _parse_version_tuple(version_str: str | None) -> tuple[int, ...] | None:
+    """Parse a dotted version string into a comparable integer tuple."""
+    if not isinstance(version_str, str) or not version_str.strip():
+        return None
+    parts: list[int] = []
+    for raw in version_str.strip().split("."):
+        digits = "".join(ch for ch in raw if ch.isdigit())
+        if not digits:
+            break
+        parts.append(int(digits))
+    return tuple(parts) if parts else None
+
+
+def _version_satisfies_constraint(version_str: str | None, constraint: str) -> bool:
+    """
+    Evaluate simple semantic-version constraints.
+
+    Supports comma-separated constraints using operators:
+    `<`, `<=`, `>`, `>=`, `==`, `!=`.
+    """
+    version_tuple = _parse_version_tuple(version_str)
+    if version_tuple is None:
+        return False
+
+    for raw_part in constraint.split(","):
+        part = raw_part.strip()
+        if not part:
+            continue
+        operator = None
+        rhs = None
+        for candidate in ("<=", ">=", "==", "!=", "<", ">"):
+            if part.startswith(candidate):
+                operator = candidate
+                rhs = part[len(candidate) :].strip()
+                break
+        if operator is None or not rhs:
+            return False
+
+        rhs_tuple = _parse_version_tuple(rhs)
+        if rhs_tuple is None:
+            return False
+
+        if operator == "<" and not (version_tuple < rhs_tuple):
+            return False
+        if operator == "<=" and not (version_tuple <= rhs_tuple):
+            return False
+        if operator == ">" and not (version_tuple > rhs_tuple):
+            return False
+        if operator == ">=" and not (version_tuple >= rhs_tuple):
+            return False
+        if operator == "==" and not (version_tuple == rhs_tuple):
+            return False
+        if operator == "!=" and not (version_tuple != rhs_tuple):
+            return False
+
+    return True
+
+
+def _collect_runtime_versions() -> dict[str, str]:
+    """Collect runtime package versions for diagnostics."""
+    versions: dict[str, str] = {}
+    for package_name in ("mlx", "mlx-lm", "vllm-mlx"):
+        try:
+            versions[package_name] = importlib.metadata.version(package_name)
+        except importlib.metadata.PackageNotFoundError:
+            versions[package_name] = "unknown"
+    return versions
+
+
+def _load_known_bug_entries() -> list[dict[str, Any]]:
+    """Load known MLX reliability bugs from YAML database."""
+    try:
+        if not _KNOWN_BUGS_PATH.exists():
+            return []
+        with _KNOWN_BUGS_PATH.open("r", encoding="utf-8") as f:
+            payload = yaml.safe_load(f) or {}
+        bugs = payload.get("bugs", [])
+        return bugs if isinstance(bugs, list) else []
+    except Exception as e:
+        logger.warning("Failed to load known bugs DB: %s", e, exc_info=True)
+        return []
+
+
+def _infer_model_architecture() -> str:
+    """Best-effort architecture key used by known-bug matching."""
+    model_name = (_model_name or "").lower()
+    if "gemma-3" in model_name or "gemma3" in model_name:
+        return "gemma3"
+    if "qwen3-vl-30b-a3b" in model_name or "a3b" in model_name or "moe" in model_name:
+        return "qwen3_vl_moe"
+    if "qwen3-vl" in model_name:
+        return "qwen3_vl"
+    if "qwen3" in model_name:
+        return "qwen3"
+    if "zwz" in model_name:
+        return "zwz_vl"
+    if "deepseek" in model_name:
+        return "deepseek"
+    return "unknown"
+
+
+def _read_metal_memory_bytes() -> tuple[int | None, int | None]:
+    """Read active/peak Metal memory from MLX runtime if available."""
+    try:
+        import mlx.core as mx
+    except Exception:
+        return None, None
+
+    metal = getattr(mx, "metal", None)
+    if metal is not None and hasattr(metal, "is_available") and not metal.is_available():
+        return None, None
+
+    active_getter = None
+    peak_getter = None
+    if metal is not None:
+        active_getter = getattr(metal, "get_active_memory", None)
+        peak_getter = getattr(metal, "get_peak_memory", None)
+    if active_getter is None:
+        active_getter = getattr(mx, "get_active_memory", None)
+    if peak_getter is None:
+        peak_getter = getattr(mx, "get_peak_memory", None)
+
+    if not callable(active_getter) or not callable(peak_getter):
+        return None, None
+    return int(active_getter()), int(peak_getter())
+
+
+def _system_memory_bytes() -> int | None:
+    """Return total system memory bytes."""
+    try:
+        total = int(psutil.virtual_memory().total)
+        if total > 0:
+            return total
+    except Exception:
+        pass
+    return None
+
+
+def _poll_memory_state() -> dict[str, Any]:
+    """Poll memory and update shared pressure state."""
+    active_bytes, peak_bytes = _read_metal_memory_bytes()
+    system_bytes = _system_memory_bytes()
+    _memory_state.update(
+        active_bytes=active_bytes,
+        peak_bytes=peak_bytes,
+        system_bytes=system_bytes,
+        warn_threshold_pct=_memory_warn_threshold_pct,
+        limit_threshold_pct=_memory_limit_threshold_pct,
+        action=_memory_action,
+    )
+    return _memory_state.snapshot()
+
+
+async def _memory_monitor_loop() -> None:
+    """Background memory monitoring loop for pressure-based guardrails."""
+    while True:
+        snapshot = _poll_memory_state()
+        pressure = snapshot.get("pressure")
+        utilization = snapshot.get("utilization_pct")
+        if pressure in {"elevated", "critical"} and utilization is not None:
+            logger.warning(
+                "[memory] pressure=%s utilization=%.1f%% action=%s",
+                pressure,
+                utilization,
+                _memory_action,
+            )
+        await asyncio.sleep(max(1.0, _memory_monitor_interval_seconds))
+
+
+def _resolve_effective_max_tokens(request_value: int | None) -> int:
+    """Apply memory-pressure policy to request max_tokens."""
+    base = request_value or _default_max_tokens
+    factor = _memory_state.max_tokens_factor()
+    if factor >= 0.999:
+        return base
+    return max(1, int(base * factor))
+
+
+def _collect_dtype_strings() -> tuple[str | None, str | None]:
+    """Best-effort (loaded_dtype, expected_dtype) extraction from runtime state."""
+    candidates: list[Any] = [_engine]
+    if _engine is not None:
+        candidates.extend(
+            [
+                getattr(_engine, "_model", None),
+                getattr(getattr(_engine, "_model", None), "model", None),
+                getattr(getattr(_engine, "_model", None), "config", None),
+                getattr(getattr(getattr(_engine, "_model", None), "model", None), "config", None),
+            ]
+        )
+
+    loaded_dtype = None
+    expected_dtype = None
+    for obj in candidates:
+        if obj is None:
+            continue
+        for attr_name in ("dtype", "torch_dtype"):
+            value = getattr(obj, attr_name, None)
+            if value is not None and loaded_dtype is None:
+                loaded_dtype = str(value)
+        config = getattr(obj, "config", None)
+        if config is not None:
+            value = getattr(config, "torch_dtype", None)
+            if value is not None and expected_dtype is None:
+                expected_dtype = str(value)
+
+    if loaded_dtype is None and _model_name:
+        lowered = _model_name.lower()
+        if "4bit" in lowered:
+            loaded_dtype = "int4/quantized"
+        elif "8bit" in lowered:
+            loaded_dtype = "int8/quantized"
+
+    return loaded_dtype, expected_dtype
+
+
+def _check_dtype_status() -> DiagnosticCheck:
+    """Run dtype consistency diagnostics."""
+    loaded_dtype, expected_dtype = _collect_dtype_strings()
+    architecture = _infer_model_architecture()
+
+    if loaded_dtype is None and expected_dtype is None:
+        return DiagnosticCheck(
+            status="warning",
+            detail="Could not determine loaded or expected dtype from runtime state.",
+            metadata={"architecture": architecture},
+        )
+
+    loaded_lower = (loaded_dtype or "").lower()
+    expected_lower = (expected_dtype or "").lower()
+    if "float16" in loaded_lower and "bfloat16" in expected_lower:
+        return DiagnosticCheck(
+            status="warning",
+            detail=(
+                f"Loaded dtype {loaded_dtype} may be incompatible with expected "
+                f"{expected_dtype}."
+            ),
+            metadata={"architecture": architecture},
+        )
+
+    if "float16" in loaded_lower and architecture in {"gemma3", "qwen3_vl_moe"}:
+        return DiagnosticCheck(
+            status="warning",
+            detail=(
+                "float16 detected on architecture with known sensitivity; "
+                "prefer bfloat16 or quantized runtime path."
+            ),
+            metadata={"architecture": architecture},
+        )
+
+    detail_parts = []
+    if loaded_dtype:
+        detail_parts.append(f"loaded={loaded_dtype}")
+    if expected_dtype:
+        detail_parts.append(f"expected={expected_dtype}")
+    if not detail_parts:
+        detail_parts.append("dtype unavailable")
+
+    return DiagnosticCheck(
+        status="pass",
+        detail=f"Dtype check OK ({', '.join(detail_parts)}).",
+        metadata={"architecture": architecture},
+    )
+
+
+def _collect_stop_token_ids() -> tuple[set[int], set[int]]:
+    """
+    Collect EOS/stop token IDs from tokenizer and generation configuration.
+
+    Returns:
+        (configured_ids, generation_ids)
+    """
+    configured_ids: set[int] = set()
+    generation_ids: set[int] = set()
+
+    tokenizer = _get_text_tokenizer()
+    if tokenizer is not None:
+        eos_id = getattr(tokenizer, "eos_token_id", None)
+        if isinstance(eos_id, int):
+            configured_ids.add(eos_id)
+        eos_ids = getattr(tokenizer, "eos_token_ids", None)
+        if isinstance(eos_ids, (list, tuple)):
+            configured_ids.update(i for i in eos_ids if isinstance(i, int))
+
+        gen_cfg = getattr(tokenizer, "generation_config", None)
+        if gen_cfg is not None:
+            gen_eos_id = getattr(gen_cfg, "eos_token_id", None)
+            if isinstance(gen_eos_id, int):
+                generation_ids.add(gen_eos_id)
+            elif isinstance(gen_eos_id, (list, tuple)):
+                generation_ids.update(i for i in gen_eos_id if isinstance(i, int))
+
+    for obj in (
+        getattr(_engine, "_model", None),
+        getattr(getattr(_engine, "_model", None), "model", None),
+        getattr(getattr(_engine, "_model", None), "config", None),
+    ):
+        if obj is None:
+            continue
+        gen_cfg = getattr(obj, "generation_config", None)
+        if gen_cfg is None:
+            continue
+        gen_eos_id = getattr(gen_cfg, "eos_token_id", None)
+        if isinstance(gen_eos_id, int):
+            generation_ids.add(gen_eos_id)
+        elif isinstance(gen_eos_id, (list, tuple)):
+            generation_ids.update(i for i in gen_eos_id if isinstance(i, int))
+
+    return configured_ids, generation_ids
+
+
+def _check_eos_status() -> DiagnosticCheck:
+    """Run EOS/stop-token and template readiness diagnostics."""
+    configured_ids, generation_ids = _collect_stop_token_ids()
+    tokenizer = _get_text_tokenizer()
+
+    template_warning = None
+    if tokenizer is None:
+        template_warning = "Tokenizer unavailable for chat template verification."
+    elif hasattr(tokenizer, "apply_chat_template"):
+        try:
+            tokenizer.apply_chat_template(
+                [{"role": "user", "content": "health-check"}],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        except TypeError:
+            # Some tokenizers don't accept add_generation_prompt/tools kwargs.
+            try:
+                tokenizer.apply_chat_template(
+                    [{"role": "user", "content": "health-check"}],
+                    tokenize=False,
+                )
+            except Exception as e:
+                template_warning = f"Chat template rendering failed: {e}"
+        except Exception as e:
+            template_warning = f"Chat template rendering failed: {e}"
+    else:
+        template_warning = "Tokenizer has no apply_chat_template; fallback formatting may be used."
+
+    if configured_ids and generation_ids and not generation_ids.issuperset(configured_ids):
+        return DiagnosticCheck(
+            status="warning",
+            detail=(
+                f"EOS mismatch: configured={sorted(configured_ids)} "
+                f"generation={sorted(generation_ids)}"
+            ),
+        )
+
+    if template_warning:
+        return DiagnosticCheck(status="warning", detail=template_warning)
+
+    if configured_ids and generation_ids:
+        detail = (
+            f"EOS tokens aligned: configured={sorted(configured_ids)} "
+            f"generation={sorted(generation_ids)}."
+        )
+    elif configured_ids:
+        detail = f"EOS tokens present in tokenizer: {sorted(configured_ids)}."
+    else:
+        detail = "No explicit EOS IDs detected; relying on model defaults."
+    return DiagnosticCheck(status="pass", detail=detail)
+
+
+def _check_memory_status() -> tuple[DiagnosticCheck, DiagnosticMemory]:
+    """Run memory utilization diagnostics and return check + structured memory payload."""
+    snapshot = _poll_memory_state()
+    active_bytes = snapshot.get("active_bytes")
+    peak_bytes = snapshot.get("peak_bytes")
+    system_bytes = snapshot.get("system_bytes")
+    utilization_pct = snapshot.get("utilization_pct")
+    pressure = snapshot.get("pressure", "unknown")
+    trend = snapshot.get("trend", "unknown")
+
+    memory_payload = DiagnosticMemory(
+        active_gb=round(active_bytes / 1e9, 2) if isinstance(active_bytes, int) else None,
+        peak_gb=round(peak_bytes / 1e9, 2) if isinstance(peak_bytes, int) else None,
+        system_gb=round(system_bytes / 1e9, 2) if isinstance(system_bytes, int) else None,
+        utilization_pct=round(utilization_pct, 2)
+        if isinstance(utilization_pct, (float, int))
+        else None,
+        trend=trend,
+        pressure=pressure,
+    )
+
+    if utilization_pct is None:
+        return (
+            DiagnosticCheck(
+                status="warning",
+                detail="Metal memory metrics unavailable in this runtime.",
+            ),
+            memory_payload,
+        )
+
+    detail = (
+        f"Active: {memory_payload.active_gb}GB / {memory_payload.system_gb}GB "
+        f"({memory_payload.utilization_pct}%), trend={trend}, pressure={pressure}"
+    )
+
+    if pressure == "critical":
+        return DiagnosticCheck(status="fail", detail=detail), memory_payload
+    if pressure == "elevated":
+        return DiagnosticCheck(status="warning", detail=detail), memory_payload
+    return DiagnosticCheck(status="pass", detail=detail), memory_payload
+
+
+def _check_version_status() -> DiagnosticCheck:
+    """Run runtime version diagnostics and known-bug matching."""
+    versions = _collect_runtime_versions()
+    architecture = _infer_model_architecture()
+    known_bugs = _load_known_bug_entries()
+
+    matching_bug_ids: list[str] = []
+    for entry in known_bugs:
+        if not isinstance(entry, dict):
+            continue
+        bug_id = str(entry.get("id", "unknown"))
+        applies = entry.get("applies_to_architectures", [])
+        if applies and architecture not in applies and "all" not in applies:
+            continue
+
+        constraints = entry.get("constraints", {})
+        if not isinstance(constraints, dict):
+            constraints = {}
+
+        violated = True
+        for package_name, constraint in constraints.items():
+            if not isinstance(constraint, str):
+                continue
+            pkg_version = versions.get(package_name, "unknown")
+            if not _version_satisfies_constraint(pkg_version, constraint):
+                violated = False
+                break
+        if violated:
+            matching_bug_ids.append(bug_id)
+
+    detail = (
+        f"mlx {versions.get('mlx')}, mlx-lm {versions.get('mlx-lm')}, "
+        f"vllm-mlx {versions.get('vllm-mlx')}"
+    )
+    if matching_bug_ids:
+        return DiagnosticCheck(
+            status="warning",
+            detail=f"{detail}; matched known issues: {', '.join(sorted(matching_bug_ids))}",
+            metadata={"architecture": architecture, "known_bug_ids": matching_bug_ids},
+        )
+    return DiagnosticCheck(
+        status="pass",
+        detail=f"{detail}; no matching known-issue signatures for {architecture}.",
+        metadata={"architecture": architecture},
+    )
+
+
+def _aggregate_diagnostic_status(checks: dict[str, DiagnosticCheck]) -> str:
+    """Reduce per-check states to top-level health status."""
+    states = {c.status for c in checks.values()}
+    if "fail" in states:
+        return "unhealthy"
+    if "warning" in states:
+        return "degraded"
+    return "healthy"
+
+
 @app.get("/health")
 async def health():
     """Health check endpoint."""
@@ -1054,6 +1645,43 @@ async def health():
         "engine_type": engine_stats.get("engine_type", "unknown"),
         "mcp": mcp_info,
     }
+
+
+@app.get("/health/diagnostics", dependencies=[Depends(verify_api_key)])
+async def health_diagnostics() -> DiagnosticsHealthResponse:
+    """
+    Diagnostic health endpoint with lightweight quality checks.
+
+    Auth behavior respects the global API key policy:
+    - when auth is disabled, endpoint is effectively public
+    - when auth is enabled, API key is required
+    """
+    checks: dict[str, DiagnosticCheck] = {}
+
+    if _engine is None:
+        checks["dtype"] = DiagnosticCheck(
+            status="fail",
+            detail="Model not loaded; cannot run dtype diagnostics.",
+        )
+        checks["eos"] = DiagnosticCheck(
+            status="fail",
+            detail="Model not loaded; cannot run EOS diagnostics.",
+        )
+    else:
+        checks["dtype"] = _check_dtype_status()
+        checks["eos"] = _check_eos_status()
+
+    memory_check, memory_payload = _check_memory_status()
+    checks["memory"] = memory_check
+    checks["version"] = _check_version_status()
+
+    return DiagnosticsHealthResponse(
+        status=_aggregate_diagnostic_status(checks),
+        model=_model_name,
+        checks=checks,
+        memory=memory_payload,
+        timestamp=datetime.now(UTC).isoformat(),
+    )
 
 
 @app.get("/v1/status")
@@ -1745,7 +2373,7 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
         output = await _wait_with_disconnect(
             engine.generate(
                 prompt=prompt,
-                max_tokens=request.max_tokens or _default_max_tokens,
+                max_tokens=_resolve_effective_max_tokens(request.max_tokens),
                 temperature=_resolve_temperature(request.temperature),
                 top_p=_resolve_top_p(request.top_p),
                 repetition_penalty=_resolve_repetition_penalty(
@@ -1887,7 +2515,7 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
 
     # Prepare kwargs
     chat_kwargs = {
-        "max_tokens": request.max_tokens or _default_max_tokens,
+        "max_tokens": _resolve_effective_max_tokens(request.max_tokens),
         "temperature": _resolve_temperature(request.temperature),
         "top_p": _resolve_top_p(request.top_p),
         "stop": request.stop,
@@ -2108,7 +2736,7 @@ async def create_anthropic_message(
     )
 
     chat_kwargs = {
-        "max_tokens": openai_request.max_tokens or _default_max_tokens,
+        "max_tokens": _resolve_effective_max_tokens(openai_request.max_tokens),
         "temperature": openai_request.temperature,
         "top_p": openai_request.top_p,
     }
@@ -2299,7 +2927,7 @@ async def _stream_anthropic_messages(
     )
 
     chat_kwargs = {
-        "max_tokens": openai_request.max_tokens or _default_max_tokens,
+        "max_tokens": _resolve_effective_max_tokens(openai_request.max_tokens),
         "temperature": openai_request.temperature,
         "top_p": openai_request.top_p,
     }
@@ -2448,7 +3076,7 @@ async def stream_completion(
     )
     async for output in engine.stream_generate(
         prompt=prompt,
-        max_tokens=request.max_tokens or _default_max_tokens,
+        max_tokens=_resolve_effective_max_tokens(request.max_tokens),
         temperature=_resolve_temperature(request.temperature),
         top_p=_resolve_top_p(request.top_p),
         repetition_penalty=repetition_penalty,
@@ -2836,6 +3464,34 @@ Examples:
         default=0,
         help="Rate limit requests per minute per client (0 = disabled)",
     )
+    parser.add_argument(
+        "--memory-warn-threshold",
+        type=float,
+        default=70.0,
+        help="Warn threshold for memory utilization percent (default: 70.0)",
+    )
+    parser.add_argument(
+        "--memory-limit-threshold",
+        type=float,
+        default=85.0,
+        help="Limit threshold for memory utilization percent (default: 85.0)",
+    )
+    parser.add_argument(
+        "--memory-action",
+        type=str,
+        default="warn",
+        choices=["warn", "reduce-context", "reject-new"],
+        help=(
+            "Action when memory limit threshold is crossed: "
+            "warn, reduce-context, or reject-new."
+        ),
+    )
+    parser.add_argument(
+        "--memory-monitor-interval",
+        type=float,
+        default=5.0,
+        help="Memory monitor polling interval in seconds (default: 5.0)",
+    )
     # Reasoning parser options - choices loaded dynamically from registry
     from .reasoning import list_parsers
 
@@ -2882,10 +3538,24 @@ Examples:
 
     # Set global configuration
     global _api_key, _default_timeout, _rate_limiter
+    global _memory_warn_threshold_pct, _memory_limit_threshold_pct
+    global _memory_action, _memory_monitor_interval_seconds
     global _default_temperature, _default_top_p, _max_thinking_tokens
     _api_key = args.api_key
     _default_timeout = args.timeout
     _max_thinking_tokens = args.max_thinking_tokens
+    if args.memory_warn_threshold <= 0:
+        raise ValueError("--memory-warn-threshold must be > 0")
+    if args.memory_limit_threshold <= args.memory_warn_threshold:
+        raise ValueError(
+            "--memory-limit-threshold must be greater than --memory-warn-threshold"
+        )
+    if args.memory_monitor_interval <= 0:
+        raise ValueError("--memory-monitor-interval must be > 0")
+    _memory_warn_threshold_pct = args.memory_warn_threshold
+    _memory_limit_threshold_pct = args.memory_limit_threshold
+    _memory_action = args.memory_action
+    _memory_monitor_interval_seconds = args.memory_monitor_interval
     if args.default_temperature is not None:
         _default_temperature = args.default_temperature
     if args.default_top_p is not None:
@@ -2911,6 +3581,13 @@ Examples:
     else:
         logger.warning("  Rate limiting: DISABLED - Use --rate-limit to enable")
     logger.info(f"  Request timeout: {args.timeout}s")
+    logger.info(
+        "  Memory guardrails: warn=%.1f%% limit=%.1f%% action=%s interval=%.1fs",
+        args.memory_warn_threshold,
+        args.memory_limit_threshold,
+        args.memory_action,
+        args.memory_monitor_interval,
+    )
     logger.info("=" * 60)
 
     # Set MCP config for lifespan

@@ -192,6 +192,18 @@ def serve_command(args):
     if args.max_thinking_tokens is not None and not args.reasoning_parser:
         print("Error: --max-thinking-tokens requires --reasoning-parser")
         sys.exit(1)
+    if args.memory_warn_threshold <= 0:
+        print("Error: --memory-warn-threshold must be > 0")
+        sys.exit(1)
+    if args.memory_limit_threshold <= args.memory_warn_threshold:
+        print(
+            "Error: --memory-limit-threshold must be greater than "
+            "--memory-warn-threshold"
+        )
+        sys.exit(1)
+    if args.memory_monitor_interval <= 0:
+        print("Error: --memory-monitor-interval must be > 0")
+        sys.exit(1)
 
     # Configure server security settings
     server._api_key = args.api_key
@@ -238,6 +250,10 @@ def serve_command(args):
     else:
         server._reasoning_parser = None
     server._max_thinking_tokens = args.max_thinking_tokens
+    server._memory_warn_threshold_pct = args.memory_warn_threshold
+    server._memory_limit_threshold_pct = args.memory_limit_threshold
+    server._memory_action = args.memory_action
+    server._memory_monitor_interval_seconds = args.memory_monitor_interval
 
     bind_host = _resolve_bind_host(args.host, args.localhost)
     observed_peak = load_observed_peak_concurrency()
@@ -263,6 +279,13 @@ def serve_command(args):
     else:
         print("  Rate limiting: DISABLED - Use --rate-limit to enable")
     print(f"  Request timeout: {args.timeout}s")
+    print(
+        "  Memory guardrails: "
+        f"warn={args.memory_warn_threshold:.1f}% "
+        f"limit={args.memory_limit_threshold:.1f}% "
+        f"action={args.memory_action} "
+        f"interval={args.memory_monitor_interval:.1f}s"
+    )
     if args.enable_auto_tool_choice:
         print(f"  Tool calling: ENABLED (parser: {args.tool_call_parser})")
     else:
@@ -966,6 +989,34 @@ Examples:
         type=int,
         default=0,
         help="Rate limit requests per minute per client (0 = disabled)",
+    )
+    serve_parser.add_argument(
+        "--memory-warn-threshold",
+        type=float,
+        default=70.0,
+        help="Warn threshold for memory utilization percent (default: 70.0)",
+    )
+    serve_parser.add_argument(
+        "--memory-limit-threshold",
+        type=float,
+        default=85.0,
+        help="Limit threshold for memory utilization percent (default: 85.0)",
+    )
+    serve_parser.add_argument(
+        "--memory-action",
+        type=str,
+        default="warn",
+        choices=["warn", "reduce-context", "reject-new"],
+        help=(
+            "Action when memory limit threshold is crossed: "
+            "warn, reduce-context, or reject-new."
+        ),
+    )
+    serve_parser.add_argument(
+        "--memory-monitor-interval",
+        type=float,
+        default=5.0,
+        help="Memory monitor polling interval in seconds (default: 5.0)",
     )
     serve_parser.add_argument(
         "--timeout",

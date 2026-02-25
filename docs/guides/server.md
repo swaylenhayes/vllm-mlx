@@ -37,6 +37,10 @@ vllm-mlx serve mlx-community/Llama-3.2-3B-Instruct-4bit --port 8000 --continuous
 | `--localhost` | Bind to localhost only; overrides `--host` | False |
 | `--api-key` | API key for authentication | None |
 | `--rate-limit` | Requests per minute per client (0 = disabled) | 0 |
+| `--memory-warn-threshold` | Memory warn threshold (% of system memory) | 70.0 |
+| `--memory-limit-threshold` | Memory limit threshold (% of system memory) | 85.0 |
+| `--memory-action` | Memory limit action (`warn`, `reduce-context`, `reject-new`) | warn |
+| `--memory-monitor-interval` | Memory monitor polling interval (seconds) | 5.0 |
 | `--timeout` | Request timeout in seconds | 300 |
 | `--runtime-mode` | Runtime mode policy (`auto`, `simple`, `batched`) | auto |
 | `--runtime-mode-threshold` | Auto mode threshold for selecting batched mode | 2 |
@@ -157,7 +161,28 @@ See [Embeddings Guide](embeddings.md) for details.
 GET /health
 ```
 
-Returns server status.
+Returns server status. This endpoint is always unauthenticated.
+
+### Diagnostic Health Check
+
+```bash
+GET /health/diagnostics
+```
+
+Returns lightweight quality diagnostics for the loaded model:
+- dtype compatibility status
+- EOS/template consistency status
+- memory pressure status
+- version/known-issue status
+
+When memory pressure crosses thresholds, server behavior follows `--memory-action`:
+- `warn`: continue serving and log warnings
+- `reduce-context`: reduce max tokens for new requests by 50%
+- `reject-new`: return HTTP 503 for new inference requests
+
+Authentication behavior follows server auth policy:
+- when `--api-key` is disabled, diagnostics is publicly accessible
+- when `--api-key` is enabled, diagnostics requires API key
 
 ### Anthropic Messages API
 

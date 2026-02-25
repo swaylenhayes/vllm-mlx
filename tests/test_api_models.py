@@ -14,6 +14,9 @@ from vllm_mlx.api.models import (
     AudioSpeechRequest,
     AudioTranscriptionRequest,
     AudioTranscriptionResponse,
+    DiagnosticCheck,
+    DiagnosticMemory,
+    DiagnosticsHealthResponse,
     ChatCompletionChunk,
     ChatCompletionChunkChoice,
     ChatCompletionChunkDelta,
@@ -421,6 +424,38 @@ class TestModelsEndpoint:
         )
         assert resp.object == "list"
         assert len(resp.data) == 2
+
+
+class TestDiagnosticsModels:
+    """Tests for diagnostics response models."""
+
+    def test_diagnostic_check(self):
+        check = DiagnosticCheck(status="pass", detail="ok")
+        assert check.status == "pass"
+        assert check.detail == "ok"
+        assert check.metadata is None
+
+    def test_diagnostics_health_response(self):
+        resp = DiagnosticsHealthResponse(
+            status="degraded",
+            model="mlx-community/Qwen3-4B-8bit",
+            checks={
+                "dtype": DiagnosticCheck(status="warning", detail="dtype mismatch"),
+                "memory": DiagnosticCheck(status="pass", detail="ok"),
+            },
+            memory=DiagnosticMemory(
+                active_gb=8.0,
+                peak_gb=9.5,
+                system_gb=96.0,
+                utilization_pct=8.33,
+                trend="stable",
+                pressure="normal",
+            ),
+            timestamp="2026-02-25T12:00:00Z",
+        )
+        assert resp.status == "degraded"
+        assert resp.memory is not None
+        assert resp.checks["dtype"].status == "warning"
 
 
 class TestMCPModels:

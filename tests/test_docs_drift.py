@@ -17,6 +17,10 @@ TRACKED_SERVER_OPTIONS = {
     "--port",
     "--api-key",
     "--rate-limit",
+    "--memory-warn-threshold",
+    "--memory-limit-threshold",
+    "--memory-action",
+    "--memory-monitor-interval",
     "--timeout",
     "--runtime-mode",
     "--runtime-mode-threshold",
@@ -54,7 +58,7 @@ def _extract_doc_endpoints(doc_text: str) -> set[str]:
     for method, path in re.findall(
         r"\b(GET|POST|PUT|PATCH|DELETE)\s+(/[^\s`]+)", doc_text
     ):
-        if path.startswith("/v1/") or path == "/health":
+        if path.startswith("/v1/") or path.startswith("/health"):
             endpoints.add(f"{method} {path}")
     return endpoints
 

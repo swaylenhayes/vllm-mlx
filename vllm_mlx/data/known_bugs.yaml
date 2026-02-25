@@ -1,0 +1,78 @@
+version: 1
+description: >
+  Starter known-issue database for MLX reliability diagnostics.
+  Entries are matched by architecture key and package-version constraints.
+
+bugs:
+  - id: MLX-001
+    title: BF16-trained model quality degradation under float16 runtime
+    category: dtype_corruption
+    severity: high
+    applies_to_architectures: ["gemma3", "qwen3_vl"]
+    constraints:
+      mlx: "<0.25.1"
+    detail: >
+      Some BF16-trained models show quality drift when forced through float16
+      paths. Prefer BF16 or quantized deployments.
+    source: "research-trace: gemma3 bf16/fp16 mismatch class"
+
+  - id: MLX-002
+    title: Metal kernel loop instability under specific generation workloads
+    category: kernel_loops
+    severity: high
+    applies_to_architectures: ["qwen3_vl_moe", "qwen3_vl"]
+    constraints:
+      mlx: "<0.25.1"
+      mlx-lm: "<0.30.7"
+    detail: >
+      Certain batch/runtime compositions may trigger unstable loop behavior in
+      kernel execution paths.
+    source: "research-trace: kernel-loop instability postmortems"
+
+  - id: MLX-003
+    title: float16 non-determinism under batch composition changes
+    category: float16_nondeterminism
+    severity: medium
+    applies_to_architectures: ["qwen3", "qwen3_vl", "qwen3_vl_moe", "all"]
+    constraints:
+      mlx: "<0.25.1"
+    detail: >
+      In float16-heavy decode paths, deterministic prompts can produce
+      divergence across batch compositions.
+    source: "research-trace: batch invariance and float16 drift notes"
+
+  - id: MLX-004
+    title: Cache persistence save corruption risk
+    category: save_corruption
+    severity: medium
+    applies_to_architectures: ["all"]
+    constraints:
+      mlx-lm: "<0.30.6"
+    detail: >
+      Prompt/KV cache persistence may produce corrupted or incompatible state
+      under specific save/load sequences.
+    source: "research-trace: cache save corruption reports"
+
+  - id: MLX-005
+    title: Conv1D numerical drift on selected model families
+    category: conv1d_drift
+    severity: medium
+    applies_to_architectures: ["deepseek", "all"]
+    constraints:
+      mlx: "<0.25.1"
+    detail: >
+      Convolution-heavy subgraphs may exhibit numerical drift that degrades
+      output quality over long runs.
+    source: "research-trace: conv1d drift diagnostics"
+
+  - id: MLX-006
+    title: GELU implementation mismatch across runtime variants
+    category: gelu_mismatch
+    severity: low
+    applies_to_architectures: ["all"]
+    constraints:
+      mlx: "<0.25.1"
+    detail: >
+      Minor activation mismatch in GELU variants can accumulate into measurable
+      output deltas for some prompts.
+    source: "research-trace: gelu mismatch audit"

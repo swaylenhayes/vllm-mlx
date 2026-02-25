@@ -354,6 +354,52 @@ class TestHelperFunctions:
         assert within == "a b"
         assert overflow == "c d"
 
+    def test_version_satisfies_constraint(self):
+        from vllm_mlx.server import _version_satisfies_constraint
+
+        assert _version_satisfies_constraint("0.25.0", ">=0.24.0")
+        assert _version_satisfies_constraint("0.25.0", "<=0.25.0")
+        assert not _version_satisfies_constraint("0.25.0", "<0.25.0")
+        assert _version_satisfies_constraint("0.25.0", ">=0.24.0,<0.30.0")
+
+    def test_resolve_effective_max_tokens_applies_memory_factor(self, monkeypatch):
+        import vllm_mlx.server as server
+
+        class DummyState:
+            def max_tokens_factor(self):
+                return 0.5
+
+        monkeypatch.setattr(server, "_memory_state", DummyState())
+        assert server._resolve_effective_max_tokens(200) == 100
+
+    def test_aggregate_diagnostic_status(self):
+        from vllm_mlx.server import (
+            DiagnosticCheck,
+            _aggregate_diagnostic_status,
+        )
+
+        assert (
+            _aggregate_diagnostic_status(
+                {"a": DiagnosticCheck(status="pass", detail="ok")}
+            )
+            == "healthy"
+        )
+        assert (
+            _aggregate_diagnostic_status(
+                {
+                    "a": DiagnosticCheck(status="pass", detail="ok"),
+                    "b": DiagnosticCheck(status="warning", detail="warn"),
+                }
+            )
+            == "degraded"
+        )
+        assert (
+            _aggregate_diagnostic_status(
+                {"a": DiagnosticCheck(status="fail", detail="bad")}
+            )
+            == "unhealthy"
+        )
+
     def test_tool_call_spray_policy_dedupes_exact_duplicates(self):
         import vllm_mlx.server as server
 
@@ -954,6 +1000,32 @@ class TestRouteSecurityCoverage:
             r
             for r in server.app.routes
             if isinstance(r, APIRoute) and r.path == "/v1/capabilities"
+        )
+        dependency_calls = {dep.call for dep in route.dependant.dependencies}
+        assert server.verify_api_key in dependency_calls
+
+    def test_health_route_is_public(self):
+        """Health route should remain unauthenticated for simple liveness checks."""
+        from fastapi.routing import APIRoute
+
+        import vllm_mlx.server as server
+
+        route = next(
+            r for r in server.app.routes if isinstance(r, APIRoute) and r.path == "/health"
+        )
+        dependency_calls = {dep.call for dep in route.dependant.dependencies}
+        assert server.verify_api_key not in dependency_calls
+
+    def test_health_diagnostics_route_respects_auth(self):
+        """Diagnostics route should enforce auth when API key protection is enabled."""
+        from fastapi.routing import APIRoute
+
+        import vllm_mlx.server as server
+
+        route = next(
+            r
+            for r in server.app.routes
+            if isinstance(r, APIRoute) and r.path == "/health/diagnostics"
         )
         dependency_calls = {dep.call for dep in route.dependant.dependencies}
         assert server.verify_api_key in dependency_calls

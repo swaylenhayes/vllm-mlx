@@ -26,6 +26,10 @@ vllm-mlx serve <model> [options]
 | `--host` | Server host | 0.0.0.0 |
 | `--api-key` | API key for authentication | None |
 | `--rate-limit` | Requests per minute per client (0 = disabled) | 0 |
+| `--memory-warn-threshold` | Memory warn threshold (% of system memory) | 70.0 |
+| `--memory-limit-threshold` | Memory limit threshold (% of system memory) | 85.0 |
+| `--memory-action` | Memory limit action (`warn`, `reduce-context`, `reject-new`) | warn |
+| `--memory-monitor-interval` | Memory monitor polling interval in seconds | 5.0 |
 | `--timeout` | Request timeout in seconds | 300 |
 | `--continuous-batching` | Enable batching for multi-user | False |
 | `--cache-memory-mb` | Cache memory limit in MB | Auto |
