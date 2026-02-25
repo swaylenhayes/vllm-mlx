@@ -2,9 +2,9 @@
 
 This page summarizes what the fork changed beyond raw throughput numbers.
 
-Scope date: 2026-02-24  
+Scope date: 2026-02-25  
 Fork: `swaylenhayes/vllm-mlx`  
-Current head for these changes: `d890ef6`
+Current head for these changes: `9c07636`
 
 ## Why this exists
 
@@ -20,6 +20,21 @@ From local model re-evaluation runs, the fork runtime policy and parser work imp
 | LiquidAI LFM / WaveCut | Unparsed proprietary tool-call format | `--tool-call-parser liquidai` | Tool-call extraction path now available |
 | Thinking-heavy models | Large reasoning blocks reduced usable output budget | Reasoning parser improvements and `max_thinking_tokens` control | Better control over visible answer/tool budget |
 | Repetition-prone prompts | Limited request-level repetition tuning | `frequency_penalty` API support | Client-side tuning now possible |
+
+## P1.10 validation outcomes (2026-02-25)
+
+Thinking-model tool-calling re-evaluation (`d890ef6` -> `9c07636`):
+
+| Model | `d890ef6` | `9c07636` | Best budget | Quality |
+|---|---:|---:|---:|:---:|
+| WaveCut LFM2.5-DWQ-4bit | 6/9 | **9/9** | 64 | A |
+| LFM2.5-1.2B-Thinking-8bit | 6/9 | **9/9** | 128 | A |
+| Nanbeige4.1-3B-8bit | 6/9 | **9/9** | 256 | B |
+
+Key points:
+- Engine-level think-exit forcing breaks the prior `6/9` ceiling for this probe set.
+- Best `max_thinking_tokens` value is model-specific.
+- A new failure mode appears at non-optimal budgets: redundant tool-call spray.
 
 ## Fork runtime profile
 
@@ -58,11 +73,13 @@ vllm-mlx serve <model-id> \
 
 ## Caveat (current status)
 
-Thinking budget control is currently API-layer behavior:
-- caps emitted reasoning tokens
-- routes overflow reasoning into content/tool parsing flow
+Thinking budget behavior now has two layers:
+- Engine layer (`SimpleEngine` LLM path): can force-close reasoning with injected `</think>` and continue decode.
+- API layer (fallback): caps emitted reasoning tokens and routes overflow into content/tool parsing flow.
 
-It is not yet decode-loop token intervention (true in-loop forced `</think>` injection).
+Operational caveats:
+- Engine-level forcing depends on runtime path (`SimpleEngine` LLM route).
+- Non-optimal budgets can degrade quality via redundant tool-call spray even when raw score is high.
 
 ## Related references
 

@@ -78,21 +78,50 @@ vllm-mlx serve <model-id> \
   --enable-auto-tool-choice --tool-call-parser liquidai
 ```
 
-Latest shipped fork update (not yet reflected in the phase throughput table): `d890ef6`
+Latest shipped fork update for thinking-model tool-calling: `9c07636` (P1.10)
 
-- Adds LiquidAI tool parser support.
-- Adds `--max-thinking-tokens` and request-level `max_thinking_tokens`.
-- Fixes reasoning/tool parser order in streaming and non-streaming paths.
+- Adds engine-level forced think exit in `SimpleEngine` LLM path.
+- Preserves `--max-thinking-tokens` and request-level `max_thinking_tokens` controls.
+- Keeps reasoning/tool parser-ordering fixes from `d890ef6`.
 
-Validation snapshot for `d890ef6` (thinking-model tool calling):
+Validation snapshot (`d890ef6` -> `9c07636`, thinking-model tool-calling):
 
-| Model | Before `d890ef6` | After `d890ef6` | Parser |
-|---|---:|---:|---|
-| WaveCut LFM2.5-DWQ-4bit | 0/9 | **6/9** | `liquidai` |
-| LFM2.5-1.2B-Thinking-8bit | 0/9 | **6/9** | `liquidai` |
-| Nanbeige4.1-3B-8bit | 6/9 | **6/9** | `auto` |
+| Model | Before `9c07636` | After `9c07636` | Best budget | Quality tier |
+|---|---:|---:|---:|:---:|
+| WaveCut LFM2.5-DWQ-4bit | 6/9 | **9/9** | `64` | `A` |
+| LFM2.5-1.2B-Thinking-8bit | 6/9 | **9/9** | `128` | `A` |
+| Nanbeige4.1-3B-8bit | 6/9 | **9/9** | `256` | `B` |
 
-Observed ceiling for this validation set was `6/9` due to the same ambiguous file-search probe failing across all three models. Current interpretation: probe-level/model-capacity limitation at this scale, not a parser regression.
+Key findings from the latest sweep:
+- Optimal thinking budget is model-specific; there is no single universal value.
+- Wrong budget can cause redundant tool-call spray (13-15 calls) even when score is `9/9`.
+- Cleanest observed production behavior in this set: `LFM-Thinking @ 128`.
+
+Recommended serve profiles for these models:
+
+```bash
+# WaveCut DWQ
+vllm-mlx serve WaveCut/LFM2.5-1.2B-Thinking-MLX_4bit_DWQ \
+  --localhost --runtime-mode auto --cache-strategy auto \
+  --enable-auto-tool-choice --tool-call-parser liquidai \
+  --reasoning-parser qwen3 --max-thinking-tokens 64
+
+# LFM-Thinking
+vllm-mlx serve LiquidAI/LFM2.5-1.2B-Thinking-MLX-8bit \
+  --localhost --runtime-mode auto --cache-strategy auto \
+  --enable-auto-tool-choice --tool-call-parser liquidai \
+  --reasoning-parser qwen3 --max-thinking-tokens 128
+
+# Nanbeige4.1
+vllm-mlx serve mlx-community/Nanbeige4.1-3B-8bit \
+  --localhost --runtime-mode auto --cache-strategy auto \
+  --enable-auto-tool-choice --tool-call-parser auto \
+  --reasoning-parser qwen3 --max-thinking-tokens 256
+```
+
+Current caveat:
+- Engine-level forced think exit applies to `SimpleEngine` LLM path (`--runtime-mode auto`/`simple` when routed there).
+- Other engine paths keep API-layer thinking-budget handling.
 
 Detailed model compatibility notes and re-evaluation summary:
 - [`docs/benchmarks/fork-benefits.md`](docs/benchmarks/fork-benefits.md)

@@ -9,6 +9,47 @@ Rules:
 
 ## Entries
 
+### 2026-02-25 - `9c07636` (P1.10 validation sweep)
+
+- Change:
+  - Added engine-level forced think exit (`</think>`) in `SimpleEngine` LLM decode path.
+  - Wired server-side parser-aware thinking-boundary kwargs for engine routing.
+- Measurement status: benchmarked (tool-calling probes)
+- Measurement setup:
+  - Models: `WaveCut LFM2.5-DWQ-4bit`, `LFM2.5-1.2B-Thinking-8bit`, `Nanbeige4.1-3B-8bit`
+  - Runtime profile:
+    - `--localhost --runtime-mode auto --cache-strategy auto`
+    - WaveCut/LFM: `--enable-auto-tool-choice --tool-call-parser liquidai --reasoning-parser qwen3`
+    - Nanbeige: `--enable-auto-tool-choice --tool-call-parser auto --reasoning-parser qwen3`
+  - Workload: 9 tool-calling probes per model (3 tools x 3 scenarios)
+  - Budget sweep:
+    - WaveCut: `64`, `128`, `256`
+    - LFM-Thinking: `64`, `128`, `256`
+    - Nanbeige: `64`, `128`, `256`
+- Baseline:
+  - Commit: `d890ef6`
+  - Key metric(s):
+    - WaveCut: `6/9`
+    - LFM-Thinking: `6/9`
+    - Nanbeige4.1: `6/9`
+- Result:
+  - Commit: `9c07636`
+  - Key metric(s):
+    - WaveCut: `9/9` (best at `64`)
+    - LFM-Thinking: `9/9` (best at `128`)
+    - Nanbeige4.1: `9/9` (best at `256`)
+  - Delta:
+    - WaveCut: `+3`
+    - LFM-Thinking: `+3`
+    - Nanbeige4.1: `+3`
+- Caveats:
+  - Optimal `max_thinking_tokens` is model-specific; no universal value.
+  - Some budget/model combinations produce tool-call spray (13-15 redundant calls) despite passing score checks.
+  - Engine-level forcing is on `SimpleEngine` LLM path; other paths keep API-layer budget behavior.
+- Links:
+  - Validation source: local workspace specs note (2026-02-25)
+  - Compatibility detail: [`fork-benefits.md`](fork-benefits.md)
+
 ### 2026-02-24 - `d890ef6` (thinking-model validation pass)
 
 - Change:
