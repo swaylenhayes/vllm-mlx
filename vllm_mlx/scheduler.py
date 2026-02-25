@@ -135,6 +135,13 @@ class SchedulerConfig:
     enable_vision_cache: bool = True
     vision_cache_size: int = 100
 
+    # Optional MLLM-only prefill-step override (None=use MLLM default)
+    mllm_prefill_step_size: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        if self.mllm_prefill_step_size is not None and self.mllm_prefill_step_size <= 0:
+            raise ValueError("mllm_prefill_step_size must be > 0 when provided")
+
 
 @dataclass
 class SchedulerOutput:

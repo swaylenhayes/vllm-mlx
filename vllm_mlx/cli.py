@@ -385,6 +385,9 @@ def serve_command(args):
             # MLLM cache settings
             enable_vision_cache=not args.disable_mllm_vision_cache,
             vision_cache_size=args.mllm_vision_cache_size,
+            mllm_prefill_step_size=(
+                args.mllm_prefill_step_size if args.mllm_prefill_step_size > 0 else None
+            ),
         )
 
         print("Mode: Continuous batching (for multiple concurrent users)")
@@ -879,6 +882,12 @@ Examples:
     )
     serve_parser.add_argument(
         "--completion-batch-size", type=int, default=32, help="Completion batch size"
+    )
+    serve_parser.add_argument(
+        "--mllm-prefill-step-size",
+        type=int,
+        default=0,
+        help="Override MLLM prefill-step guard (0=use MLLM default: 1024)",
     )
     serve_parser.add_argument(
         "--enable-prefix-cache",
