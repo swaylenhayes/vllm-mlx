@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
+import math
 import statistics
 import time
 from dataclasses import dataclass
@@ -38,6 +39,12 @@ DEFAULT_PROMPTS = [
     "Provide two bullet points on memory pressure guardrails.",
     "Output the word READY and nothing else.",
 ]
+
+Z_SCORE_BY_CONFIDENCE = {
+    0.90: 1.645,
+    0.95: 1.960,
+    0.99: 2.576,
+}
 
 
 @dataclass
@@ -174,6 +181,95 @@ def _run_concurrent(
     return results
 
 
+def _compute_confidence_interval(
+    values: list[float],
+    *,
+    confidence: float,
+) -> dict[str, float]:
+    if not values:
+        raise ValueError("Cannot compute confidence interval for empty values")
+    mean = statistics.mean(values)
+    if len(values) <= 1:
+        return {
+            "mean": mean,
+            "stdev": 0.0,
+            "ci_lower": mean,
+            "ci_upper": mean,
+        }
+    stdev = statistics.stdev(values)
+    z_score = Z_SCORE_BY_CONFIDENCE[confidence]
+    half_width = z_score * (stdev / math.sqrt(len(values)))
+    return {
+        "mean": mean,
+        "stdev": stdev,
+        "ci_lower": max(0.0, mean - half_width),
+        "ci_upper": min(1.0, mean + half_width),
+    }
+
+
+def _run_single_pass(
+    prompts: list[str],
+    *,
+    base_url: str,
+    model: str,
+    max_tokens: int,
+    timeout_s: float,
+    api_key: str | None,
+    concurrency: int,
+    run_index: int,
+) -> dict[str, Any]:
+    serial = _run_serial(
+        prompts,
+        base_url=base_url,
+        model=model,
+        max_tokens=max_tokens,
+        timeout_s=timeout_s,
+        api_key=api_key,
+    )
+    concurrent = _run_concurrent(
+        prompts,
+        base_url=base_url,
+        model=model,
+        max_tokens=max_tokens,
+        timeout_s=timeout_s,
+        api_key=api_key,
+        concurrency=concurrency,
+    )
+
+    exact_matches = 0
+    per_prompt_agreement: list[float] = []
+    rows: list[dict[str, Any]] = []
+    for idx, prompt in enumerate(prompts):
+        a = serial[idx]
+        b = concurrent[idx]
+        agreement = _token_agreement(a.output, b.output)
+        exact = a.output == b.output
+        if exact:
+            exact_matches += 1
+        per_prompt_agreement.append(agreement)
+        rows.append(
+            {
+                "index": idx,
+                "prompt": prompt,
+                "serial_output": a.output,
+                "concurrent_output": b.output,
+                "token_agreement": round(agreement, 4),
+                "exact_match": exact,
+                "serial_latency_s": round(a.latency_s, 4),
+                "concurrent_latency_s": round(b.latency_s, 4),
+            }
+        )
+
+    exact_match_rate = exact_matches / len(prompts)
+    token_agreement_rate = statistics.mean(per_prompt_agreement)
+    return {
+        "run_index": run_index,
+        "exact_match_rate": exact_match_rate,
+        "token_agreement_rate": token_agreement_rate,
+        "rows": rows,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Batch invariance harness")
     parser.add_argument(
@@ -224,74 +320,88 @@ def main() -> None:
         default=None,
         help="Optional path to write JSON report",
     )
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=1,
+        help="Number of repeated serial+concurrent passes for confidence intervals",
+    )
+    parser.add_argument(
+        "--confidence",
+        type=float,
+        choices=sorted(Z_SCORE_BY_CONFIDENCE),
+        default=0.95,
+        help="Confidence level for interval output",
+    )
+    parser.add_argument(
+        "--run-cooldown",
+        type=float,
+        default=0.0,
+        help="Optional seconds to sleep between repeated runs",
+    )
     args = parser.parse_args()
 
     prompts = _load_prompts(args.prompts_file)
     concurrency = max(1, min(args.concurrency, len(prompts)))
+    if args.runs < 1:
+        raise ValueError("--runs must be >= 1")
+    if args.run_cooldown < 0:
+        raise ValueError("--run-cooldown must be >= 0")
 
-    print(f"Running serial pass on {len(prompts)} prompts...")
-    serial = _run_serial(
-        prompts,
-        base_url=args.base_url,
-        model=args.model,
-        max_tokens=args.max_tokens,
-        timeout_s=args.timeout,
-        api_key=args.api_key,
-    )
-
-    print(f"Running concurrent pass (concurrency={concurrency})...")
-    concurrent = _run_concurrent(
-        prompts,
-        base_url=args.base_url,
-        model=args.model,
-        max_tokens=args.max_tokens,
-        timeout_s=args.timeout,
-        api_key=args.api_key,
-        concurrency=concurrency,
-    )
-
-    exact_matches = 0
-    per_prompt_agreement: list[float] = []
-    rows: list[dict[str, Any]] = []
-    for idx, prompt in enumerate(prompts):
-        a = serial[idx]
-        b = concurrent[idx]
-        agreement = _token_agreement(a.output, b.output)
-        exact = a.output == b.output
-        if exact:
-            exact_matches += 1
-        per_prompt_agreement.append(agreement)
-        rows.append(
-            {
-                "index": idx,
-                "prompt": prompt,
-                "serial_output": a.output,
-                "concurrent_output": b.output,
-                "token_agreement": round(agreement, 4),
-                "exact_match": exact,
-                "serial_latency_s": round(a.latency_s, 4),
-                "concurrent_latency_s": round(b.latency_s, 4),
-            }
+    run_reports: list[dict[str, Any]] = []
+    for run_index in range(args.runs):
+        print(f"Run {run_index + 1}/{args.runs}: serial pass on {len(prompts)} prompts...")
+        print(f"Run {run_index + 1}/{args.runs}: concurrent pass (concurrency={concurrency})...")
+        run_report = _run_single_pass(
+            prompts,
+            base_url=args.base_url,
+            model=args.model,
+            max_tokens=args.max_tokens,
+            timeout_s=args.timeout,
+            api_key=args.api_key,
+            concurrency=concurrency,
+            run_index=run_index,
         )
+        run_reports.append(run_report)
+        print(
+            f"Run {run_index + 1}/{args.runs}: "
+            f"token={run_report['token_agreement_rate'] * 100:.2f}% "
+            f"exact={run_report['exact_match_rate'] * 100:.2f}%"
+        )
+        if args.run_cooldown > 0 and (run_index + 1) < args.runs:
+            time.sleep(args.run_cooldown)
 
-    exact_match_rate = exact_matches / len(prompts)
-    token_agreement_rate = statistics.mean(per_prompt_agreement)
+    token_values = [r["token_agreement_rate"] for r in run_reports]
+    exact_values = [r["exact_match_rate"] for r in run_reports]
+    token_summary = _compute_confidence_interval(token_values, confidence=args.confidence)
+    exact_summary = _compute_confidence_interval(exact_values, confidence=args.confidence)
+    ci_percent = int(args.confidence * 100)
+    latest_rows = run_reports[-1]["rows"]
 
     print()
     print("Batch Invariance Report")
     print("-" * 60)
     print(f"Model: {args.model}")
     print(f"Prompts: {len(prompts)}")
-    print(f"Exact output match rate: {exact_match_rate * 100:.2f}%")
-    print(f"Token agreement rate:    {token_agreement_rate * 100:.2f}%")
+    print(f"Runs: {args.runs}")
+    print(f"Exact output match rate: {exact_summary['mean'] * 100:.2f}%")
+    print(f"Token agreement rate:    {token_summary['mean'] * 100:.2f}%")
+    print(
+        f"{ci_percent}% CI token agreement: "
+        f"[{token_summary['ci_lower'] * 100:.2f}%, {token_summary['ci_upper'] * 100:.2f}%]"
+    )
+    print(
+        f"{ci_percent}% CI exact match:    "
+        f"[{exact_summary['ci_lower'] * 100:.2f}%, {exact_summary['ci_upper'] * 100:.2f}%]"
+    )
     print("-" * 60)
-    for row in rows:
+    for row in latest_rows:
         print(
             f"[{row['index']:02d}] agreement={row['token_agreement']:.2f} "
             f"exact={row['exact_match']}"
         )
 
-    if token_agreement_rate < 0.95:
+    if token_summary["ci_lower"] < 0.95:
         print("Result: potential batch invariance violation (<95% token agreement).")
     else:
         print("Result: no significant batch invariance violation detected.")
@@ -302,9 +412,14 @@ def main() -> None:
         "prompt_count": len(prompts),
         "max_tokens": args.max_tokens,
         "concurrency": concurrency,
-        "exact_match_rate": exact_match_rate,
-        "token_agreement_rate": token_agreement_rate,
-        "rows": rows,
+        "runs": args.runs,
+        "confidence_level": args.confidence,
+        "exact_match_rate": exact_summary["mean"],
+        "token_agreement_rate": token_summary["mean"],
+        "exact_match_summary": exact_summary,
+        "token_agreement_summary": token_summary,
+        "rows": latest_rows,
+        "run_reports": run_reports,
         "timestamp_epoch": int(time.time()),
     }
     if args.json_out:
