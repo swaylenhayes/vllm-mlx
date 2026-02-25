@@ -317,6 +317,36 @@ class TestHelperFunctions:
         assert server._resolve_max_thinking_tokens(64) == 64
         assert server._resolve_max_thinking_tokens(None) == 256
 
+    def test_build_engine_thinking_kwargs_requires_think_boundaries(self, monkeypatch):
+        import vllm_mlx.server as server
+
+        class DummyParser:
+            pass
+
+        monkeypatch.setattr(server, "_max_thinking_tokens", 256)
+        monkeypatch.setattr(server, "_reasoning_parser", DummyParser())
+        assert server._build_engine_thinking_kwargs(None) == {}
+
+    def test_build_engine_thinking_kwargs_from_parser_and_budget(self, monkeypatch):
+        import vllm_mlx.server as server
+
+        class DummyThinkParser:
+            start_token = "<think>"
+            end_token = "</think>"
+
+        monkeypatch.setattr(server, "_max_thinking_tokens", 256)
+        monkeypatch.setattr(server, "_reasoning_parser", DummyThinkParser())
+        assert server._build_engine_thinking_kwargs(None) == {
+            "thinking_budget_tokens": 256,
+            "thinking_start_token": "<think>",
+            "thinking_end_token": "</think>",
+        }
+        assert server._build_engine_thinking_kwargs(64) == {
+            "thinking_budget_tokens": 64,
+            "thinking_start_token": "<think>",
+            "thinking_end_token": "</think>",
+        }
+
     def test_split_text_by_token_budget_fallback(self):
         from vllm_mlx.server import _split_text_by_token_budget
 

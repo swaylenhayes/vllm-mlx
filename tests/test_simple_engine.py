@@ -211,3 +211,108 @@ class TestSimpleEngineConcurrency:
             assert len(results) == 3
             for result in results:
                 assert result.text == "test response"
+
+
+class TestSimpleEngineThinkingBudget:
+    """Test engine-level forced think-exit behavior."""
+
+    @pytest.mark.asyncio
+    async def test_stream_chat_forces_think_exit_and_continues(self):
+        from vllm_mlx.engine.simple import SimpleEngine
+
+        model = MagicMock()
+        model.tokenizer = MagicMock()
+        model.tokenizer.encode.side_effect = (
+            lambda text, add_special_tokens=False: text.split()
+        )
+        model.tokenizer.apply_chat_template.return_value = "<think>"
+
+        call_prompts = []
+
+        def make_chunk(text, *, finished=False, finish_reason=None):
+            chunk = MagicMock()
+            chunk.text = text
+            chunk.prompt_tokens = 5
+            chunk.finished = finished
+            chunk.finish_reason = finish_reason
+            return chunk
+
+        def stream_generate_side_effect(**kwargs):
+            call_prompts.append(kwargs["prompt"])
+            if len(call_prompts) == 1:
+                yield make_chunk("step1 ")
+                yield make_chunk("step2 ")
+                return
+            yield make_chunk("final", finished=True, finish_reason="stop")
+
+        model.stream_generate = MagicMock(side_effect=stream_generate_side_effect)
+
+        with patch("vllm_mlx.engine.simple.is_mllm_model", return_value=False):
+            engine = SimpleEngine("test-model")
+            engine._model = model
+            engine._loaded = True
+
+            outputs = []
+            async for chunk in engine.stream_chat(
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=32,
+                thinking_budget_tokens=2,
+                thinking_start_token="<think>",
+                thinking_end_token="</think>",
+            ):
+                outputs.append(chunk)
+
+            assert len(call_prompts) == 2
+            assert any(c.new_text == "</think>" for c in outputs)
+            assert outputs[-1].finished is True
+            assert outputs[-1].text.endswith("</think>final")
+
+    @pytest.mark.asyncio
+    async def test_chat_uses_forced_stream_path_when_budget_enabled(self):
+        from vllm_mlx.engine.base import GenerationOutput
+        from vllm_mlx.engine.simple import SimpleEngine
+
+        model = MagicMock()
+        model.tokenizer = MagicMock()
+        model.tokenizer.apply_chat_template.return_value = "<think>"
+        model.chat = MagicMock()
+
+        async def fake_forced_stream(*args, **kwargs):
+            del args, kwargs
+            yield GenerationOutput(
+                text="<think>r1",
+                new_text="r1",
+                prompt_tokens=3,
+                completion_tokens=1,
+                finished=False,
+            )
+            yield GenerationOutput(
+                text="<think>r1</think>answer",
+                new_text="answer",
+                prompt_tokens=3,
+                completion_tokens=3,
+                finished=True,
+                finish_reason="stop",
+            )
+
+        with patch("vllm_mlx.engine.simple.is_mllm_model", return_value=False):
+            engine = SimpleEngine("test-model")
+            engine._model = model
+            engine._loaded = True
+            engine._stream_llm_with_forced_think_exit = MagicMock(
+                side_effect=fake_forced_stream
+            )
+
+            result = await engine.chat(
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=16,
+                thinking_budget_tokens=2,
+                thinking_start_token="<think>",
+                thinking_end_token="</think>",
+            )
+
+            assert result.text == "<think>r1</think>answer"
+            assert result.completion_tokens == 3
+            assert result.finish_reason == "stop"
+            model.chat.assert_not_called()
+            assert engine._stream_llm_with_forced_think_exit.call_count == 1

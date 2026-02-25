@@ -206,6 +206,45 @@ def _resolve_max_thinking_tokens(request_value: int | None) -> int | None:
     return _max_thinking_tokens
 
 
+def _get_reasoning_boundary_tokens() -> tuple[str, str] | None:
+    """
+    Return reasoning boundary tokens when parser exposes think-style tags.
+
+    Non-think parsers (e.g., harmony/gpt-oss) do not expose start/end tags and
+    cannot support forced think-exit steering.
+    """
+    if _reasoning_parser is None:
+        return None
+
+    start_token = getattr(_reasoning_parser, "start_token", None)
+    end_token = getattr(_reasoning_parser, "end_token", None)
+    if not isinstance(start_token, str) or not start_token:
+        return None
+    if not isinstance(end_token, str) or not end_token:
+        return None
+    return start_token, end_token
+
+
+def _build_engine_thinking_kwargs(request_value: int | None) -> dict[str, Any]:
+    """
+    Build optional engine-level thinking controls for decode steering.
+
+    This is currently effective on SimpleEngine LLM decode paths. Other engines
+    safely ignore unknown kwargs and continue using API-layer budget fallback.
+    """
+    max_thinking_tokens = _resolve_max_thinking_tokens(request_value)
+    boundaries = _get_reasoning_boundary_tokens()
+    if max_thinking_tokens is None or boundaries is None:
+        return {}
+
+    start_token, end_token = boundaries
+    return {
+        "thinking_budget_tokens": max_thinking_tokens,
+        "thinking_start_token": start_token,
+        "thinking_end_token": end_token,
+    }
+
+
 def _get_text_tokenizer() -> Any | None:
     """Return a tokenizer with encode/decode if available."""
     if _engine is None:
@@ -1652,6 +1691,7 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
     )
     if repetition_penalty is not None:
         chat_kwargs["repetition_penalty"] = repetition_penalty
+    chat_kwargs.update(_build_engine_thinking_kwargs(request.max_thinking_tokens))
 
     # Add multimodal content
     if has_media:
@@ -1869,6 +1909,9 @@ async def create_anthropic_message(
     )
     if repetition_penalty is not None:
         chat_kwargs["repetition_penalty"] = repetition_penalty
+    chat_kwargs.update(
+        _build_engine_thinking_kwargs(getattr(openai_request, "max_thinking_tokens", None))
+    )
 
     if openai_request.tools:
         chat_kwargs["tools"] = convert_tools_for_template(openai_request.tools)
@@ -2055,6 +2098,9 @@ async def _stream_anthropic_messages(
     )
     if repetition_penalty is not None:
         chat_kwargs["repetition_penalty"] = repetition_penalty
+    chat_kwargs.update(
+        _build_engine_thinking_kwargs(getattr(openai_request, "max_thinking_tokens", None))
+    )
 
     if openai_request.tools:
         chat_kwargs["tools"] = convert_tools_for_template(openai_request.tools)

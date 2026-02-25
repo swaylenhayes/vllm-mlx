@@ -72,6 +72,220 @@ class SimpleEngine(BaseEngine):
             return getattr(self._model, "processor", None)
         return self._model.tokenizer
 
+    def _count_tokens(self, text: str) -> int:
+        """Best-effort token count for generated text snippets."""
+        if not text:
+            return 0
+        tokenizer = getattr(self._model, "tokenizer", None)
+        if tokenizer is not None and hasattr(tokenizer, "encode"):
+            try:
+                return len(tokenizer.encode(text, add_special_tokens=False))
+            except TypeError:
+                return len(tokenizer.encode(text))
+            except Exception:
+                pass
+        return len(text.split())
+
+    def _extract_reasoning_text(
+        self,
+        prompt: str,
+        generated_text: str,
+        start_token: str,
+        end_token: str,
+    ) -> str | None:
+        """
+        Extract current reasoning segment for think-tag models.
+
+        Supports both explicit and implicit think mode:
+        - explicit: model emits <think>...</think>
+        - implicit: <think> is already present in prompt, output starts in reasoning
+        """
+        if not generated_text:
+            return None
+
+        implicit_mode = start_token in prompt
+
+        if start_token in generated_text and end_token in generated_text:
+            _, _, after_start = generated_text.partition(start_token)
+            reasoning, _, _ = after_start.partition(end_token)
+            return reasoning
+
+        if end_token in generated_text:
+            if implicit_mode:
+                reasoning, _, _ = generated_text.partition(end_token)
+                return reasoning
+            if start_token in generated_text:
+                _, _, after_start = generated_text.partition(start_token)
+                reasoning, _, _ = after_start.partition(end_token)
+                return reasoning
+            return None
+
+        if start_token in generated_text:
+            _, _, reasoning = generated_text.partition(start_token)
+            return reasoning
+
+        if implicit_mode:
+            return generated_text
+        return None
+
+    def _build_llm_prompt(
+        self,
+        messages: list[dict[str, Any]],
+        template_tools: list[dict] | None = None,
+    ) -> str:
+        """Build an LLM prompt from OpenAI-format messages."""
+        tokenizer = self._model.tokenizer
+        if hasattr(tokenizer, "apply_chat_template"):
+            # Disable thinking mode for coder models since it interferes
+            # with tool call parsing (tags leak as raw text).
+            enable_thinking = "coder" not in self._model_name.lower()
+            template_kwargs = {
+                "tokenize": False,
+                "add_generation_prompt": True,
+                "enable_thinking": enable_thinking,
+            }
+            if template_tools:
+                template_kwargs["tools"] = template_tools
+
+            try:
+                return tokenizer.apply_chat_template(messages, **template_kwargs)
+            except TypeError:
+                # Some templates don't support all kwargs
+                for key in ["tools", "enable_thinking"]:
+                    if key in template_kwargs:
+                        del template_kwargs[key]
+                return tokenizer.apply_chat_template(messages, **template_kwargs)
+
+        prompt = "\n".join(f"{m['role']}: {m['content']}" for m in messages)
+        prompt += "\nassistant:"
+        return prompt
+
+    async def _stream_llm_with_forced_think_exit(
+        self,
+        prompt: str,
+        *,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        stop: list[str] | None,
+        thinking_budget_tokens: int,
+        thinking_start_token: str,
+        thinking_end_token: str,
+        **kwargs,
+    ) -> AsyncIterator[GenerationOutput]:
+        """
+        Stream generation with engine-level think-phase forcing.
+
+        When reasoning exceeds `thinking_budget_tokens` and no closing token has
+        appeared, force-close with `thinking_end_token`, then continue generation
+        from the updated prompt.
+        """
+        async with self._generation_lock:
+            accumulated_text = ""
+            prompt_tokens = 0
+            completion_tokens = 0
+
+            current_prompt = prompt
+            remaining_tokens = max_tokens
+            forced_exit_applied = False
+
+            while remaining_tokens > 0:
+                phase_progress = False
+
+                for chunk in self._model.stream_generate(
+                    prompt=current_prompt,
+                    max_tokens=remaining_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    stop=stop,
+                    **kwargs,
+                ):
+                    phase_progress = True
+                    prompt_tokens = (
+                        chunk.prompt_tokens
+                        if hasattr(chunk, "prompt_tokens")
+                        else prompt_tokens
+                    )
+
+                    new_text = chunk.text if hasattr(chunk, "text") else str(chunk)
+                    accumulated_text += new_text
+                    completion_tokens += 1
+                    remaining_tokens -= 1
+
+                    model_finished = (
+                        getattr(chunk, "finished", False) or remaining_tokens <= 0
+                    )
+                    finish_reason = None
+                    if model_finished:
+                        finish_reason = getattr(chunk, "finish_reason", "stop")
+
+                    yield GenerationOutput(
+                        text=accumulated_text,
+                        new_text=new_text,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        finished=model_finished,
+                        finish_reason=finish_reason,
+                    )
+
+                    if model_finished:
+                        return
+
+                    if forced_exit_applied:
+                        continue
+
+                    reasoning_text = self._extract_reasoning_text(
+                        prompt=prompt,
+                        generated_text=accumulated_text,
+                        start_token=thinking_start_token,
+                        end_token=thinking_end_token,
+                    )
+                    if not reasoning_text:
+                        continue
+                    if thinking_end_token in accumulated_text:
+                        continue
+
+                    reasoning_tokens = self._count_tokens(reasoning_text)
+                    if reasoning_tokens < thinking_budget_tokens:
+                        continue
+
+                    # Force-close reasoning and continue decoding from updated prompt.
+                    forced_exit_applied = True
+                    injected_text = thinking_end_token
+                    if injected_text:
+                        accumulated_text += injected_text
+                        injected_tokens = max(1, self._count_tokens(injected_text))
+                        completion_tokens += injected_tokens
+                        remaining_tokens = max(0, remaining_tokens - injected_tokens)
+
+                        injected_finished = remaining_tokens <= 0
+                        yield GenerationOutput(
+                            text=accumulated_text,
+                            new_text=injected_text,
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=completion_tokens,
+                            finished=injected_finished,
+                            finish_reason="length" if injected_finished else None,
+                        )
+
+                        if injected_finished:
+                            return
+
+                    current_prompt = prompt + accumulated_text
+                    break
+
+                if not phase_progress:
+                    break
+
+            yield GenerationOutput(
+                text=accumulated_text,
+                new_text="",
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                finished=True,
+                finish_reason="length",
+            )
+
     async def start(self) -> None:
         """Start the engine (load model if not loaded)."""
         if self._loaded:
@@ -264,8 +478,39 @@ class SimpleEngine(BaseEngine):
         if not self._loaded:
             await self.start()
 
+        thinking_budget_tokens = kwargs.pop("thinking_budget_tokens", None)
+        thinking_start_token = kwargs.pop("thinking_start_token", "<think>")
+        thinking_end_token = kwargs.pop("thinking_end_token", "</think>")
+        stop = kwargs.pop("stop", None)
+
         # Convert tools for template if provided
         template_tools = convert_tools_for_template(tools) if tools else None
+
+        if not self._is_mllm and thinking_budget_tokens:
+            prompt = self._build_llm_prompt(messages, template_tools)
+            final_output: GenerationOutput | None = None
+            async for chunk in self._stream_llm_with_forced_think_exit(
+                prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                stop=stop,
+                thinking_budget_tokens=thinking_budget_tokens,
+                thinking_start_token=thinking_start_token,
+                thinking_end_token=thinking_end_token,
+                **kwargs,
+            ):
+                final_output = chunk
+
+            if final_output is None:
+                return GenerationOutput(text="", finish_reason="stop")
+
+            return GenerationOutput(
+                text=clean_output_text(final_output.text),
+                prompt_tokens=final_output.prompt_tokens,
+                completion_tokens=final_output.completion_tokens,
+                finish_reason=final_output.finish_reason,
+            )
 
         async with self._generation_lock:
             if self._is_mllm:
@@ -277,6 +522,7 @@ class SimpleEngine(BaseEngine):
                     max_tokens=max_tokens,
                     temperature=temperature,
                     top_p=top_p,
+                    stop=stop,
                     **kwargs,
                 )
                 text = clean_output_text(output.text)
@@ -295,6 +541,7 @@ class SimpleEngine(BaseEngine):
                     max_tokens=max_tokens,
                     temperature=temperature,
                     top_p=top_p,
+                    stop=stop,
                     tools=template_tools,
                     **kwargs,
                 )
@@ -336,6 +583,11 @@ class SimpleEngine(BaseEngine):
         if not self._loaded:
             await self.start()
 
+        thinking_budget_tokens = kwargs.pop("thinking_budget_tokens", None)
+        thinking_start_token = kwargs.pop("thinking_start_token", "<think>")
+        thinking_end_token = kwargs.pop("thinking_end_token", "</think>")
+        stop = kwargs.pop("stop", None)
+
         # Convert tools for template
         template_tools = convert_tools_for_template(tools) if tools else None
 
@@ -353,6 +605,7 @@ class SimpleEngine(BaseEngine):
                         max_tokens=max_tokens,
                         temperature=temperature,
                         top_p=top_p,
+                        stop=stop,
                         **kwargs,
                     )
                 )
@@ -379,31 +632,22 @@ class SimpleEngine(BaseEngine):
                     break
             return
 
-        # For LLM, apply chat template and stream
-        tokenizer = self._model.tokenizer
-        if hasattr(tokenizer, "apply_chat_template"):
-            # Disable thinking mode for coder models since it interferes
-            # with tool call parsing (tags leak as raw text).
-            enable_thinking = "coder" not in self._model_name.lower()
-            template_kwargs = {
-                "tokenize": False,
-                "add_generation_prompt": True,
-                "enable_thinking": enable_thinking,
-            }
-            if template_tools:
-                template_kwargs["tools"] = template_tools
+        prompt = self._build_llm_prompt(messages, template_tools)
 
-            try:
-                prompt = tokenizer.apply_chat_template(messages, **template_kwargs)
-            except TypeError:
-                # Some templates don't support all kwargs
-                for key in ["tools", "enable_thinking"]:
-                    if key in template_kwargs:
-                        del template_kwargs[key]
-                prompt = tokenizer.apply_chat_template(messages, **template_kwargs)
-        else:
-            prompt = "\n".join(f"{m['role']}: {m['content']}" for m in messages)
-            prompt += "\nassistant:"
+        if thinking_budget_tokens:
+            async for output in self._stream_llm_with_forced_think_exit(
+                prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                stop=stop,
+                thinking_budget_tokens=thinking_budget_tokens,
+                thinking_start_token=thinking_start_token,
+                thinking_end_token=thinking_end_token,
+                **kwargs,
+            ):
+                yield output
+            return
 
         # Stream generate
         async for output in self.stream_generate(
@@ -411,6 +655,7 @@ class SimpleEngine(BaseEngine):
             max_tokens=max_tokens,
             temperature=temperature,
             top_p=top_p,
+            stop=stop,
             **kwargs,
         ):
             yield output
