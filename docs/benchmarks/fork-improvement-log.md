@@ -9,6 +9,49 @@ Rules:
 
 ## Entries
 
+### 2026-02-25 - `05869bc` (I6 validation sweep on latest branch state `219cfda`)
+
+- Change:
+  - I6 server-side tool-call spray mitigation:
+    - exact duplicate dedupe (`function + canonical args`)
+    - large same-function burst collapse (threshold guard)
+- Measurement status: benchmarked (tool-calling probes, focused follow-up)
+- Measurement setup:
+  - Models: `WaveCut LFM2.5-DWQ-4bit`, `LFM2.5-1.2B-Thinking-8bit`, `Nanbeige4.1-3B-8bit`
+  - Runtime profile:
+    - `--localhost --runtime-mode auto --cache-strategy auto`
+    - WaveCut/LFM: `--enable-auto-tool-choice --tool-call-parser liquidai --reasoning-parser qwen3`
+    - Nanbeige: `--enable-auto-tool-choice --tool-call-parser auto --reasoning-parser qwen3`
+  - Workload: focused 3-probe subset plus sanity/full-probe checks
+  - Compared states:
+    - Pre-I6 baseline: `9c07636`
+    - Post-I6 validation branch state: `219cfda` (includes I6 and later changes)
+- Baseline:
+  - Commit: `9c07636`
+  - Key metric(s):
+    - WaveCut@128: `3/3`, `13` calls
+    - WaveCut@256: `0/3`, `0` calls
+    - LFM@128: `3/3`, `1` call
+    - Nanbeige@256: `3/3`, `15` calls
+- Result:
+  - Commit: `219cfda` (I6 validation target state)
+  - Key metric(s):
+    - WaveCut@128: `3/3`, `7` calls
+    - WaveCut@256: `3/3`, `2` calls
+    - LFM@128: `0/3`, `0` calls
+    - LFM@256: `3/3`, `1` call
+    - Nanbeige@256: `0/3`, `0` calls
+  - Delta:
+    - Exact dedupe confirmed for WaveCut@128: `13 -> 7`
+    - No universal quality pattern at budget `256` across all models
+- Caveats:
+  - Some observed score shifts occur in "no tool-call emitted" mode and are likely run variance/model stochasticity, not direct dedupe side effects.
+  - I6 mitigation runs after tool calls are emitted; it cannot by itself explain failures where no tool calls are produced.
+  - Single-shot results on 1.2B-3B models are unstable; repeated-run methodology is recommended.
+- Links:
+  - Validation source: local workspace spec `i6-validation-results-2026-02-25.md`
+  - Compatibility detail: [`fork-benefits.md`](fork-benefits.md)
+
 ### 2026-02-25 - `9c07636` (P1.10 validation sweep)
 
 - Change:

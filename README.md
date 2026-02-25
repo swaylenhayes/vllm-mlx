@@ -87,9 +87,12 @@ vllm-mlx serve <vlm-model-id> \
   --enable-auto-tool-choice --tool-call-parser auto
 ```
 
-Latest shipped fork update for thinking-model tool-calling: `9c07636` (P1.10)
+Latest shipped fork updates for thinking-model tool-calling:
 
-- Adds engine-level forced think exit in `SimpleEngine` LLM path.
+- `9c07636` (P1.10): engine-level forced think exit in `SimpleEngine` LLM path.
+- `05869bc` (I6): tool-call spray mitigation (exact dedupe + high-threshold burst collapse).
+- `219cfda` (I7 implementation): MLLM tool/template passthrough (`tools` + `tool_choice`) in simple and batched paths.
+
 - Preserves `--max-thinking-tokens` and request-level `max_thinking_tokens` controls.
 - Keeps reasoning/tool parser-ordering fixes from `d890ef6`.
 
@@ -107,22 +110,37 @@ Key findings from the latest sweep:
 - Cleanest observed production behavior in this set: `LFM-Thinking @ 128`.
 - I6 mitigation now active: exact duplicate tool calls are removed, and large same-function bursts are collapsed to the first call.
 
+I6 validation snapshot (`9c07636` -> `219cfda`, tool-call spray focus):
+
+| Model | Budget | Pre-I6 score/calls | Post-I6 score/calls | Outcome |
+|---|---:|---|---|---|
+| WaveCut DWQ | `128` | `3/3`, `13` calls | `3/3`, `7` calls | Exact dedupe confirmed (`13 -> 7`) |
+| WaveCut DWQ | `256` | `0/3`, `0` calls | `3/3`, `2` calls | Large quality gain in latest branch state |
+| LFM-Thinking | `128` | `3/3`, `1` call | `0/3`, `0` calls | Variant run behavior |
+| LFM-Thinking | `256` | untested | `3/3`, `1` call | Clean single-call output |
+| Nanbeige4.1 | `256` | `3/3`, `15` calls | `0/3`, `0` calls | Variant run behavior |
+
+I6 takeaway:
+- Safe to ship: no clear I6-attributable degradation pattern.
+- Spray mitigation is working for exact duplicate bursts.
+- Universal budget `256` across all models is not confirmed; per-model profiling is still required.
+
 Recommended serve profiles for these models:
 
 ```bash
-# WaveCut DWQ
+# WaveCut DWQ (latest validation: best observed at 256)
 vllm-mlx serve WaveCut/LFM2.5-1.2B-Thinking-MLX_4bit_DWQ \
   --localhost --runtime-mode auto --cache-strategy auto \
   --enable-auto-tool-choice --tool-call-parser liquidai \
-  --reasoning-parser qwen3 --max-thinking-tokens 64
+  --reasoning-parser qwen3 --max-thinking-tokens 256
 
-# LFM-Thinking
+# LFM-Thinking (latest validation: best observed at 256)
 vllm-mlx serve LiquidAI/LFM2.5-1.2B-Thinking-MLX-8bit \
   --localhost --runtime-mode auto --cache-strategy auto \
   --enable-auto-tool-choice --tool-call-parser liquidai \
-  --reasoning-parser qwen3 --max-thinking-tokens 128
+  --reasoning-parser qwen3 --max-thinking-tokens 256
 
-# Nanbeige4.1
+# Nanbeige4.1 (still requires repeated-run confirmation at chosen budget)
 vllm-mlx serve mlx-community/Nanbeige4.1-3B-8bit \
   --localhost --runtime-mode auto --cache-strategy auto \
   --enable-auto-tool-choice --tool-call-parser auto \
@@ -134,6 +152,7 @@ Current caveat:
 - Other engine paths keep API-layer thinking-budget handling.
 - Spray mitigation reduces burst noise but does not guarantee the selected call is semantically optimal.
 - MLLM tool-calling quality still depends on model/template behavior and parser fit; use the parser that matches model output format.
+- Small-model single-run results can vary; use repeated runs for production budget baselines.
 
 Detailed model compatibility notes and re-evaluation summary:
 - [`docs/benchmarks/fork-benefits.md`](docs/benchmarks/fork-benefits.md)

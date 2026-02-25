@@ -4,7 +4,7 @@ This page summarizes what the fork changed beyond raw throughput numbers.
 
 Scope date: 2026-02-25  
 Fork: `swaylenhayes/vllm-mlx`  
-Current head for these changes: `9c07636`
+Current head for these changes: `219cfda`
 
 ## Why this exists
 
@@ -35,6 +35,23 @@ Key points:
 - Engine-level think-exit forcing breaks the prior `6/9` ceiling for this probe set.
 - Best `max_thinking_tokens` value is model-specific.
 - A new failure mode appears at non-optimal budgets: redundant tool-call spray.
+
+## I6 validation outcomes (2026-02-25, focused follow-up)
+
+Focused re-check (`9c07636` baseline vs latest branch state `219cfda`) on spray-prone paths:
+
+| Model | Budget | Baseline | Latest | Summary |
+|---|---:|---|---|---|
+| WaveCut DWQ | `128` | `3/3`, `13` calls | `3/3`, `7` calls | Exact dedupe confirmed |
+| WaveCut DWQ | `256` | `0/3`, `0` calls | `3/3`, `2` calls | Strong quality gain in latest state |
+| LFM-Thinking | `128` | `3/3`, `1` call | `0/3`, `0` calls | Variant run behavior |
+| LFM-Thinking | `256` | untested | `3/3`, `1` call | Clean single-call output |
+| Nanbeige4.1 | `256` | `3/3`, `15` calls | `0/3`, `0` calls | Variant run behavior |
+
+Interpretation:
+- I6 is safe to ship and does not show a clear regression signature tied to dedupe logic.
+- I6 clearly helps exact duplicate spray.
+- A universal budget is still not proven; repeated-run profiling remains required.
 
 ## Fork runtime profile
 
@@ -80,6 +97,7 @@ Thinking budget behavior now has two layers:
 Operational caveats:
 - Engine-level forcing depends on runtime path (`SimpleEngine` LLM route).
 - Non-optimal budgets can degrade quality via redundant tool-call spray even when raw score is high.
+- Small-model single-run outcomes can vary; treat one-shot probe results as directional.
 
 ## Related references
 
