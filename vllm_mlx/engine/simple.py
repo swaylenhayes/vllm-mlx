@@ -266,6 +266,7 @@ class SimpleEngine(BaseEngine):
 
         # Convert tools for template if provided
         template_tools = convert_tools_for_template(tools) if tools else None
+        template_tool_choice = kwargs.pop("tool_choice", None)
 
         async with self._generation_lock:
             if self._is_mllm:
@@ -276,6 +277,8 @@ class SimpleEngine(BaseEngine):
                     messages=messages,
                     max_tokens=max_tokens,
                     temperature=temperature,
+                    tools=template_tools,
+                    tool_choice=template_tool_choice,
                     **kwargs,
                 )
                 text = clean_output_text(output.text)
@@ -337,6 +340,7 @@ class SimpleEngine(BaseEngine):
 
         # Convert tools for template
         template_tools = convert_tools_for_template(tools) if tools else None
+        template_tool_choice = kwargs.pop("tool_choice", None)
 
         # Build prompt using tokenizer
         if self._is_mllm:
@@ -351,6 +355,8 @@ class SimpleEngine(BaseEngine):
                         messages=messages,
                         max_tokens=max_tokens,
                         temperature=temperature,
+                        tools=template_tools,
+                        tool_choice=template_tool_choice,
                         **kwargs,
                     )
                 )
@@ -390,12 +396,14 @@ class SimpleEngine(BaseEngine):
             }
             if template_tools:
                 template_kwargs["tools"] = template_tools
+            if template_tool_choice is not None:
+                template_kwargs["tool_choice"] = template_tool_choice
 
             try:
                 prompt = tokenizer.apply_chat_template(messages, **template_kwargs)
             except TypeError:
                 # Some templates don't support all kwargs
-                for key in ["tools", "enable_thinking"]:
+                for key in ["tools", "tool_choice", "enable_thinking"]:
                     if key in template_kwargs:
                         del template_kwargs[key]
                 prompt = tokenizer.apply_chat_template(messages, **template_kwargs)

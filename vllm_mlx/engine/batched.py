@@ -334,6 +334,7 @@ class BatchedEngine(BaseEngine):
         self,
         messages: list[dict[str, Any]],
         tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
         num_images: int = 0,
     ) -> str:
         """Apply chat template to messages.
@@ -369,6 +370,8 @@ class BatchedEngine(BaseEngine):
             }
             if tools:
                 template_kwargs["tools"] = tools
+            if tool_choice is not None:
+                template_kwargs["tool_choice"] = tool_choice
 
             try:
                 return template_applicator.apply_chat_template(
@@ -377,7 +380,7 @@ class BatchedEngine(BaseEngine):
             except TypeError as e:
                 # Some templates don't accept 'tools'; retry without them.
                 logger.debug(f"Chat template TypeError, retrying without extras: {e}")
-                for key in ["tools"]:
+                for key in ["tools", "tool_choice"]:
                     if key in template_kwargs:
                         del template_kwargs[key]
                 return template_applicator.apply_chat_template(
@@ -620,11 +623,13 @@ class BatchedEngine(BaseEngine):
 
         # Convert tools for template
         template_tools = convert_tools_for_template(tools) if tools else None
+        template_tool_choice = kwargs.pop("tool_choice", None)
 
         # Apply chat template
         prompt = self._apply_chat_template(
             messages,
             template_tools,
+            template_tool_choice,
             num_images=len(all_images),
         )
 
@@ -639,7 +644,10 @@ class BatchedEngine(BaseEngine):
         )
 
     def _compute_prefix_boundary(
-        self, messages: list[dict[str, Any]], tools: list[dict] | None = None
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
     ) -> int:
         """Compute token count for the shared prefix across message variations.
 
@@ -661,7 +669,11 @@ class BatchedEngine(BaseEngine):
             template_tools = convert_tools_for_template(tools) if tools else None
 
             # Tokenize the real prompt
-            real_prompt = self._apply_chat_template(messages, template_tools)
+            real_prompt = self._apply_chat_template(
+                messages,
+                template_tools,
+                tool_choice,
+            )
 
             # Build a dummy variant with different last user content
             dummy_messages = list(messages)
@@ -669,7 +681,11 @@ class BatchedEngine(BaseEngine):
                 **messages[last_user_idx],
                 "content": "XXXXXXXXXX",
             }
-            dummy_prompt = self._apply_chat_template(dummy_messages, template_tools)
+            dummy_prompt = self._apply_chat_template(
+                dummy_messages,
+                template_tools,
+                tool_choice,
+            )
 
             tokenizer = self.tokenizer
             if hasattr(tokenizer, "tokenizer"):
@@ -731,16 +747,22 @@ class BatchedEngine(BaseEngine):
 
         # Convert tools for template
         template_tools = convert_tools_for_template(tools) if tools else None
+        template_tool_choice = kwargs.pop("tool_choice", None)
 
         # Apply chat template
         prompt = self._apply_chat_template(
             messages,
             template_tools,
+            template_tool_choice,
             num_images=len(all_images),
         )
 
         # Compute prefix boundary for cache
-        prefix_boundary = self._compute_prefix_boundary(messages, tools)
+        prefix_boundary = self._compute_prefix_boundary(
+            messages,
+            tools,
+            template_tool_choice,
+        )
         if prefix_boundary > 0:
             kwargs["prefix_boundary"] = prefix_boundary
 
