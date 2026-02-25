@@ -25,9 +25,13 @@ vllm-mlx-bench --model mlx-community/Qwen3-VL-8B-Instruct-4bit --video
 # Batch invariance harness (single vs concurrent agreement)
 python scripts/batch_invariance_harness.py \
   --base-url http://localhost:8000 \
-  --model mlx-community/Qwen3-4B-Instruct-4bit \
+  --model mlx-community/Qwen3-4B-Instruct-2507-4bit \
   --json-out benchmarks/batch_invariance_qwen3_4b.json
 ```
+
+Latest fork baseline artifacts:
+
+- `benchmarks/phase-results/batch-invariance-2026-02-25/summary.md`
 
 ## Standalone Test Defaults
 

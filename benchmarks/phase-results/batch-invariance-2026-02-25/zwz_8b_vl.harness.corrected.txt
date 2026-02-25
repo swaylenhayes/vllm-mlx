@@ -1,0 +1,24 @@
+=== [zwz_8b_vl] starting server for swaylenhayes/ZwZ-8B-VL-MLX-4bit ===
+Server healthy; running harness
+Running serial pass on 10 prompts...
+Running concurrent pass (concurrency=10)...
+
+Batch Invariance Report
+------------------------------------------------------------
+Model: swaylenhayes/ZwZ-8B-VL-MLX-4bit
+Prompts: 10
+Exact output match rate: 30.00%
+Token agreement rate:    53.24%
+------------------------------------------------------------
+[00] agreement=0.48 exact=False
+[01] agreement=0.39 exact=False
+[02] agreement=1.00 exact=True
+[03] agreement=1.00 exact=True
+[04] agreement=0.19 exact=False
+[05] agreement=0.32 exact=False
+[06] agreement=0.61 exact=False
+[07] agreement=0.07 exact=False
+[08] agreement=0.26 exact=False
+[09] agreement=1.00 exact=True
+Result: potential batch invariance violation (<95% token agreement).
+Wrote JSON report: benchmarks/phase-results/batch-invariance-2026-02-25/zwz_8b_vl.corrected.json

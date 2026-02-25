@@ -1,0 +1,112 @@
+{
+  "model": "swaylenhayes/ZwZ-8B-VL-MLX-4bit",
+  "base_url": "http://localhost:8000",
+  "prompt_count": 10,
+  "max_tokens": 64,
+  "concurrency": 10,
+  "exact_match_rate": 0.3,
+  "token_agreement_rate": 0.5323579119079624,
+  "rows": [
+    {
+      "index": 0,
+      "prompt": "Write one sentence explaining why caching helps inference throughput.",
+      "serial_output": "Caching helps inference throughput by reducing redundant computation and memory access, allowing frequently requested models or inputs to be retrieved quickly without reprocessing.",
+      "concurrent_output": "Caching helps inference throughput by reducing redundant computation and data retrieval, allowing the model to respond faster to repeated or similar queries.",
+      "token_agreement": 0.4783,
+      "exact_match": false,
+      "serial_latency_s": 1.4072,
+      "concurrent_latency_s": 4.1409
+    },
+    {
+      "index": 1,
+      "prompt": "List three steps to verify an API endpoint is healthy.",
+      "serial_output": "Here are three steps to verify an API endpoint is healthy:\n\n1. **Send a Health Check Request**  \n   Issue a simple HTTP GET request (often to `/health`, `/status`, or `/ping`) to see if the endpoint responds with a 200 OK status and a valid health indicator (e.g",
+      "concurrent_output": "Here are three steps to verify an API endpoint is healthy:\n\n1. **Send a Health Check Request**  \n   Make a GET request (often to `/health` or `/status`) to check if the endpoint responds with a 200 OK status and a valid health indicator (e.g., \u201cOK\u201d, \u201c",
+      "token_agreement": 0.3913,
+      "exact_match": false,
+      "serial_latency_s": 1.3712,
+      "concurrent_latency_s": 3.4008
+    },
+    {
+      "index": 2,
+      "prompt": "What is the capital of France? Answer in one word.",
+      "serial_output": "Paris",
+      "concurrent_output": "Paris",
+      "token_agreement": 1.0,
+      "exact_match": true,
+      "serial_latency_s": 0.1382,
+      "concurrent_latency_s": 0.7109
+    },
+    {
+      "index": 3,
+      "prompt": "Return exactly: ping",
+      "serial_output": "ping",
+      "concurrent_output": "ping",
+      "token_agreement": 1.0,
+      "exact_match": true,
+      "serial_latency_s": 0.1347,
+      "concurrent_latency_s": 3.4598
+    },
+    {
+      "index": 4,
+      "prompt": "Name two risks of running without authentication.",
+      "serial_output": "Running without authentication introduces significant security and operational risks. Two major risks are:\n\n1. **Unauthorized Access**: Anyone with access to the system or service can interact with it without verifying their identity. This allows malicious actors or even accidental users to perform actions (e.g., modifying data, deleting files, initiating processes) that could",
+      "concurrent_output": "Running without authentication exposes systems to several security risks. Two major risks include:\n\n1. **Unauthorized Access**: Any user or attacker with network access can interact with the system, potentially accessing sensitive data, modifying configurations, or performing actions without permission. This can lead to data breaches, system compromise, or service disruption.\n\n2.",
+      "token_agreement": 0.1923,
+      "exact_match": false,
+      "serial_latency_s": 1.3562,
+      "concurrent_latency_s": 3.4004
+    },
+    {
+      "index": 5,
+      "prompt": "Summarize why deterministic decoding matters in testing.",
+      "serial_output": "Deterministic decoding matters in testing because it ensures **predictable, repeatable, and reliable behavior** \u2014 critical for validating software, models, or systems.\n\nHere\u2019s why:\n\n1. **Reproducibility**:  \n   Deterministic decoding always produces the same output for the same input. This allows testers to reproduce test",
+      "concurrent_output": "Deterministic decoding matters in testing because it ensures **predictable, repeatable, and reliable behavior** \u2014 which is critical for validating and debugging systems, especially in complex or safety-critical domains.\n\nHere\u2019s why:\n\n1. **Consistency Across Runs**  \n   Deterministic decoding produces the same output for the same input",
+      "token_agreement": 0.3182,
+      "exact_match": false,
+      "serial_latency_s": 1.3614,
+      "concurrent_latency_s": 3.3991
+    },
+    {
+      "index": 6,
+      "prompt": "What does a 503 status code usually indicate?",
+      "serial_output": "A **503 Service Unavailable** status code usually indicates that the server is **temporarily unable to handle the request**, often due to **overload, maintenance, or temporary downtime**.\n\n### Common Causes:\n- The server is **under heavy load** or **over capacity**.\n- The server is **",
+      "concurrent_output": "A **503 Service Unavailable** status code usually indicates that the server is **temporarily unable to handle the request**, often due to **overload, maintenance, or downtime**.\n\n### Common Causes:\n- The server is **under heavy load** or **experiencing high traffic**.\n- The server",
+      "token_agreement": 0.6136,
+      "exact_match": false,
+      "serial_latency_s": 1.3673,
+      "concurrent_latency_s": 3.3988
+    },
+    {
+      "index": 7,
+      "prompt": "Give a one-line definition of batch invariance.",
+      "serial_output": "Batch invariance is the property of a model where its output remains consistent regardless of how the input data is partitioned into batches during training or inference.",
+      "concurrent_output": "Batch invariance means a model\u2019s output remains consistent regardless of how its input data is partitioned into batches during training or inference.",
+      "token_agreement": 0.0741,
+      "exact_match": false,
+      "serial_latency_s": 0.7214,
+      "concurrent_latency_s": 4.1784
+    },
+    {
+      "index": 8,
+      "prompt": "Provide two bullet points on memory pressure guardrails.",
+      "serial_output": "- Monitor and limit memory usage per container or process to prevent system-wide memory exhaustion and ensure resource fairness across workloads.\n\n- Implement automatic memory throttling or OOM (Out-of-Memory) kill policies to gracefully handle memory pressure and avoid cascading failures in production environments.",
+      "concurrent_output": "- Monitor and limit memory usage per container or pod to prevent resource exhaustion and maintain system stability.  \n- Implement graceful degradation or auto-scaling when memory pressure is detected to ensure application resilience and availability.",
+      "token_agreement": 0.2558,
+      "exact_match": false,
+      "serial_latency_s": 1.1855,
+      "concurrent_latency_s": 4.3375
+    },
+    {
+      "index": 9,
+      "prompt": "Output the word READY and nothing else.",
+      "serial_output": "READY",
+      "concurrent_output": "READY",
+      "token_agreement": 1.0,
+      "exact_match": true,
+      "serial_latency_s": 0.1333,
+      "concurrent_latency_s": 3.4575
+    }
+  ],
+  "timestamp_epoch": 1772036918
+}

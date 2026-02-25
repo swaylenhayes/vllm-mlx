@@ -1,0 +1,112 @@
+{
+  "model": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+  "base_url": "http://localhost:8000",
+  "prompt_count": 10,
+  "max_tokens": 64,
+  "concurrency": 10,
+  "exact_match_rate": 0.6,
+  "token_agreement_rate": 0.8342364824717766,
+  "rows": [
+    {
+      "index": 0,
+      "prompt": "Write one sentence explaining why caching helps inference throughput.",
+      "serial_output": "Caching helps inference throughput by storing the results of previously computed inputs, allowing the model to quickly retrieve and reuse them instead of reprocessing the same requests, thereby reducing latency and computational overhead.",
+      "concurrent_output": "Caching helps inference throughput by storing previously computed results, reducing the need to reprocess the same inputs and thereby accelerating subsequent inferences.",
+      "token_agreement": 0.1818,
+      "exact_match": false,
+      "serial_latency_s": 0.6309,
+      "concurrent_latency_s": 2.2788
+    },
+    {
+      "index": 1,
+      "prompt": "List three steps to verify an API endpoint is healthy.",
+      "serial_output": "To verify an API endpoint is healthy, follow these three steps:\n\n1. **Send a Health Check Request**: Send a GET request to the health endpoint (e.g., `/health` or `/status`) of the API. A healthy response typically returns a 200 OK status code and a JSON or text response",
+      "concurrent_output": "To verify an API endpoint is healthy, follow these three steps:\n\n1. **Send a Health Check Request**: Send a GET request to the health endpoint (e.g., `/health` or `/status`) of the API. A healthy response typically returns a 200 OK status code and a JSON or text response",
+      "token_agreement": 1.0,
+      "exact_match": true,
+      "serial_latency_s": 0.6531,
+      "concurrent_latency_s": 3.6041
+    },
+    {
+      "index": 2,
+      "prompt": "What is the capital of France? Answer in one word.",
+      "serial_output": "Paris",
+      "concurrent_output": "Paris",
+      "token_agreement": 1.0,
+      "exact_match": true,
+      "serial_latency_s": 0.1166,
+      "concurrent_latency_s": 0.7719
+    },
+    {
+      "index": 3,
+      "prompt": "Return exactly: ping",
+      "serial_output": "ping",
+      "concurrent_output": "ping",
+      "token_agreement": 1.0,
+      "exact_match": true,
+      "serial_latency_s": 0.1263,
+      "concurrent_latency_s": 0.7713
+    },
+    {
+      "index": 4,
+      "prompt": "Name two risks of running without authentication.",
+      "serial_output": "Running without authentication poses several security risks. Two key risks are:\n\n1. **Unauthorized Access**: Without authentication, malicious actors can gain access to systems, data, or services without needing valid credentials, potentially leading to data breaches, system compromise, or unauthorized modifications.\n\n2. **Lack of Accountability**: Without authentication, it",
+      "concurrent_output": "Running without authentication poses several security risks. Two key risks are:\n\n1. **Unauthorized Access**: Without authentication, malicious actors can gain access to systems, data, or services without needing valid credentials, potentially leading to data breaches, system compromise, or unauthorized modifications.\n\n2. **Lack of Accountability**: Without authentication, it",
+      "token_agreement": 1.0,
+      "exact_match": true,
+      "serial_latency_s": 0.664,
+      "concurrent_latency_s": 3.6038
+    },
+    {
+      "index": 5,
+      "prompt": "Summarize why deterministic decoding matters in testing.",
+      "serial_output": "Deterministic decoding matters in testing because it ensures that the same input always produces the same output, enabling predictable and repeatable behavior. This consistency is crucial for reliable software testing, as it allows developers and testers to:\n\n- **Verify correctness**: With deterministic behavior, test cases can be executed in isolation and expected results can be",
+      "concurrent_output": "Deterministic decoding matters in testing because it ensures that the same input always produces the same output, enabling predictable and repeatable behavior. This consistency is crucial for reliable software testing, as it allows developers and testers to:\n\n- **Verify correctness**: With deterministic behavior, test cases can reliably validate that a system behaves as expected under",
+      "token_agreement": 0.8364,
+      "exact_match": false,
+      "serial_latency_s": 0.6456,
+      "concurrent_latency_s": 3.6032
+    },
+    {
+      "index": 6,
+      "prompt": "What does a 503 status code usually indicate?",
+      "serial_output": "A **503 Status Code** usually indicates a **service unavailable** error. This means that the server is currently unable to handle the request due to a temporary overloading or maintenance.\n\n### Key Details:\n- **HTTP Status Code**: 503 Service Unavailable\n- **Cause**: The server is down",
+      "concurrent_output": "A **503 Status Code** usually indicates a **service unavailable** error. This means that the server is currently unable to handle the request due to a temporary overloading or maintenance.\n\n### Key Details:\n- **HTTP 503 Service Unavailable**: A client-side error (from the server's perspective),",
+      "token_agreement": 0.7556,
+      "exact_match": false,
+      "serial_latency_s": 0.6512,
+      "concurrent_latency_s": 3.6034
+    },
+    {
+      "index": 7,
+      "prompt": "Give a one-line definition of batch invariance.",
+      "serial_output": "Batch invariance refers to the property that a system's behavior or output remains unchanged when the batch size or input batch is altered, as long as the underlying process parameters are constant.",
+      "concurrent_output": "Batch invariance refers to the property that a system's behavior or output remains unchanged when the batch size or input batch is altered, as long as the underlying process parameters are constant.",
+      "token_agreement": 1.0,
+      "exact_match": true,
+      "serial_latency_s": 0.4256,
+      "concurrent_latency_s": 2.8705
+    },
+    {
+      "index": 8,
+      "prompt": "Provide two bullet points on memory pressure guardrails.",
+      "serial_output": "- **Memory pressure guardrails** help prevent memory exhaustion by monitoring and limiting memory allocation, such as through capping heap usage or triggering garbage collection when thresholds are exceeded.  \n- They can detect and respond to memory pressure in real time, automatically reducing object retention, pausing non-critical operations, or triggering system-level",
+      "concurrent_output": "- **Memory pressure guardrails** help prevent memory exhaustion by monitoring and limiting memory allocation, such as through capping heap usage or triggering garbage collection when thresholds are exceeded.  \n- These guardrails can detect memory pressure early and initiate actions like reducing object retention, suspending non-critical operations, or notifying the system to",
+      "token_agreement": 0.5686,
+      "exact_match": false,
+      "serial_latency_s": 0.6482,
+      "concurrent_latency_s": 3.6017
+    },
+    {
+      "index": 9,
+      "prompt": "Output the word READY and nothing else.",
+      "serial_output": "READY",
+      "concurrent_output": "READY",
+      "token_agreement": 1.0,
+      "exact_match": true,
+      "serial_latency_s": 0.1195,
+      "concurrent_latency_s": 0.7689
+    }
+  ],
+  "timestamp_epoch": 1772036895
+}

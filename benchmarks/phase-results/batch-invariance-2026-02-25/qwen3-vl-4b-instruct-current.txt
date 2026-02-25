@@ -1,0 +1,22 @@
+Running serial pass on 10 prompts...
+Running concurrent pass (concurrency=10)...
+
+Batch Invariance Report
+------------------------------------------------------------
+Model: mlx-community/Qwen3-VL-4B-Instruct-4bit
+Prompts: 10
+Exact output match rate: 30.00%
+Token agreement rate:    47.20%
+------------------------------------------------------------
+[00] agreement=0.54 exact=False
+[01] agreement=0.47 exact=False
+[02] agreement=1.00 exact=True
+[03] agreement=1.00 exact=True
+[04] agreement=0.10 exact=False
+[05] agreement=0.36 exact=False
+[06] agreement=0.04 exact=False
+[07] agreement=0.09 exact=False
+[08] agreement=0.10 exact=False
+[09] agreement=1.00 exact=True
+Result: potential batch invariance violation (<95% token agreement).
+Wrote JSON report: benchmarks/phase-results/batch-invariance-2026-02-25/qwen3-vl-4b-instruct-current.json

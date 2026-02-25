@@ -9,6 +9,41 @@ Rules:
 
 ## Entries
 
+### 2026-02-25 - `38e13c8` (R2A batch invariance baseline run)
+
+- Change:
+  - Ran first live 3-model batch invariance matrix using the shipped harness (`scripts/batch_invariance_harness.py`).
+  - Captured serial-vs-concurrent agreement artifacts for text + VLM + MoE-VLM models.
+- Measurement status: benchmarked
+- Measurement setup:
+  - Models:
+    - `mlx-community/Qwen3-4B-Instruct-2507-4bit`
+    - `swaylenhayes/ZwZ-8B-VL-MLX-4bit`
+    - `mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit`
+  - Runtime profile:
+    - `vllm-mlx serve <model> --localhost --port 8000 --runtime-mode auto --cache-strategy auto`
+    - plus `--mllm` for VLM models
+  - Workload:
+    - 10 fixed prompts, deterministic decode (`temperature=0`)
+    - serial pass vs concurrent pass (`concurrency=10`)
+- Baseline:
+  - Commit: first live matrix using harness shipped at `38e13c8`
+  - Threshold: token agreement `>=95%` interpreted as acceptable batch invariance
+- Result:
+  - Commit: `38e13c8`
+  - Key metric(s):
+    - Qwen3-4B-Instruct-2507-4bit: exact `60.00%`, token agreement `83.42%`
+    - ZwZ-8B-VL-MLX-4bit: exact `30.00%`, token agreement `53.24%`
+    - Qwen3-VL-30B-A3B-Instruct-4bit: exact `30.00%`, token agreement `48.64%`
+  - Delta:
+    - All models below the 95% target; baseline indicates batch-composition sensitivity.
+- Caveats:
+  - This is a first-pass baseline and not yet a multi-run confidence interval.
+  - Deterministic settings reduce but do not eliminate nondeterministic effects.
+- Links:
+  - Full artifact bundle: `benchmarks/phase-results/batch-invariance-2026-02-25/`
+  - Summary: `benchmarks/phase-results/batch-invariance-2026-02-25/summary.md`
+
 ### 2026-02-25 - `219cfda` (I7 MLLM tool-calling validation)
 
 - Change:
