@@ -132,6 +132,7 @@ class SimpleEngine(BaseEngine):
         self,
         messages: list[dict[str, Any]],
         template_tools: list[dict] | None = None,
+        template_tool_choice: str | dict | None = None,
     ) -> str:
         """Build an LLM prompt from OpenAI-format messages."""
         tokenizer = self._model.tokenizer
@@ -146,12 +147,14 @@ class SimpleEngine(BaseEngine):
             }
             if template_tools:
                 template_kwargs["tools"] = template_tools
+            if template_tool_choice is not None:
+                template_kwargs["tool_choice"] = template_tool_choice
 
             try:
                 return tokenizer.apply_chat_template(messages, **template_kwargs)
             except TypeError:
                 # Some templates don't support all kwargs
-                for key in ["tools", "enable_thinking"]:
+                for key in ["tools", "tool_choice", "enable_thinking"]:
                     if key in template_kwargs:
                         del template_kwargs[key]
                 return tokenizer.apply_chat_template(messages, **template_kwargs)
@@ -482,12 +485,17 @@ class SimpleEngine(BaseEngine):
         thinking_start_token = kwargs.pop("thinking_start_token", "<think>")
         thinking_end_token = kwargs.pop("thinking_end_token", "</think>")
         stop = kwargs.pop("stop", None)
+        template_tool_choice = kwargs.pop("tool_choice", None)
 
         # Convert tools for template if provided
         template_tools = convert_tools_for_template(tools) if tools else None
 
         if not self._is_mllm and thinking_budget_tokens:
-            prompt = self._build_llm_prompt(messages, template_tools)
+            prompt = self._build_llm_prompt(
+                messages,
+                template_tools,
+                template_tool_choice,
+            )
             final_output: GenerationOutput | None = None
             async for chunk in self._stream_llm_with_forced_think_exit(
                 prompt,
@@ -523,6 +531,8 @@ class SimpleEngine(BaseEngine):
                     temperature=temperature,
                     top_p=top_p,
                     stop=stop,
+                    tools=template_tools,
+                    tool_choice=template_tool_choice,
                     **kwargs,
                 )
                 text = clean_output_text(output.text)
@@ -587,6 +597,7 @@ class SimpleEngine(BaseEngine):
         thinking_start_token = kwargs.pop("thinking_start_token", "<think>")
         thinking_end_token = kwargs.pop("thinking_end_token", "</think>")
         stop = kwargs.pop("stop", None)
+        template_tool_choice = kwargs.pop("tool_choice", None)
 
         # Convert tools for template
         template_tools = convert_tools_for_template(tools) if tools else None
@@ -606,6 +617,8 @@ class SimpleEngine(BaseEngine):
                         temperature=temperature,
                         top_p=top_p,
                         stop=stop,
+                        tools=template_tools,
+                        tool_choice=template_tool_choice,
                         **kwargs,
                     )
                 )
@@ -632,7 +645,11 @@ class SimpleEngine(BaseEngine):
                     break
             return
 
-        prompt = self._build_llm_prompt(messages, template_tools)
+        prompt = self._build_llm_prompt(
+            messages,
+            template_tools,
+            template_tool_choice,
+        )
 
         if thinking_budget_tokens:
             async for output in self._stream_llm_with_forced_think_exit(

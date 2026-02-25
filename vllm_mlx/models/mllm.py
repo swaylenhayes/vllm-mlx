@@ -1028,6 +1028,8 @@ class MLXMultimodalLM:
         max_tokens: int = 256,
         temperature: float = 0.7,
         top_p: float = 0.9,
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
         **kwargs,
     ) -> MLLMOutput:
         """
@@ -1052,6 +1054,10 @@ class MLXMultimodalLM:
 
         from mlx_vlm import generate
         from mlx_vlm.prompt_utils import get_chat_template
+        template_tools = tools if tools is not None else kwargs.pop("tools", None)
+        template_tool_choice = (
+            tool_choice if tool_choice is not None else kwargs.pop("tool_choice", None)
+        )
 
         # Extract text and images from messages
         # Build chat_messages for multi-turn support WITH proper image tokens per message
@@ -1157,6 +1163,20 @@ class MLXMultimodalLM:
             )
         try:
             # Use get_chat_template directly since messages are already properly formatted
+            template_kwargs = {"add_generation_prompt": True}
+            if template_tools:
+                template_kwargs["tools"] = template_tools
+            if template_tool_choice is not None:
+                template_kwargs["tool_choice"] = template_tool_choice
+            formatted_prompt = get_chat_template(
+                self.processor,
+                chat_messages,
+                **template_kwargs,
+            )
+        except TypeError as e:
+            logger.debug(
+                f"Chat template rejected tools/tool_choice kwargs ({e}); retrying without extras"
+            )
             formatted_prompt = get_chat_template(
                 self.processor,
                 chat_messages,
@@ -1381,6 +1401,8 @@ class MLXMultimodalLM:
         max_tokens: int = 256,
         temperature: float = 0.7,
         top_p: float = 0.9,
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
         **kwargs,
     ) -> Iterator[MLLMOutput]:
         """
@@ -1406,6 +1428,12 @@ class MLXMultimodalLM:
         try:
             from mlx_vlm import stream_generate
             from mlx_vlm.prompt_utils import get_chat_template
+            template_tools = tools if tools is not None else kwargs.pop("tools", None)
+            template_tool_choice = (
+                tool_choice
+                if tool_choice is not None
+                else kwargs.pop("tool_choice", None)
+            )
         except ImportError:
             # Fallback to non-streaming if stream_generate not available
             output = self.chat(
@@ -1413,6 +1441,8 @@ class MLXMultimodalLM:
                 max_tokens=max_tokens,
                 temperature=temperature,
                 top_p=top_p,
+                tools=tools,
+                tool_choice=tool_choice,
                 **kwargs,
             )
             yield output
@@ -1511,6 +1541,20 @@ class MLXMultimodalLM:
         # Apply chat template directly - messages are already properly structured
         try:
             # Use get_chat_template directly since messages are already properly formatted
+            template_kwargs = {"add_generation_prompt": True}
+            if template_tools:
+                template_kwargs["tools"] = template_tools
+            if template_tool_choice is not None:
+                template_kwargs["tool_choice"] = template_tool_choice
+            formatted_prompt = get_chat_template(
+                self.processor,
+                chat_messages,
+                **template_kwargs,
+            )
+        except TypeError as e:
+            logger.debug(
+                f"Stream chat template rejected tools/tool_choice kwargs ({e}); retrying without extras"
+            )
             formatted_prompt = get_chat_template(
                 self.processor,
                 chat_messages,

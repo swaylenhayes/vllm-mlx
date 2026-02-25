@@ -45,6 +45,24 @@ if response.choices[0].message.tool_calls:
         print(f"Arguments: {tc.function.arguments}")
 ```
 
+## MLLM / VLM Tool Calling (I7)
+
+Tool calling now runs through both text (LLM) and multimodal (MLLM/VLM) chat paths.
+
+For VLM models, start the server in MLLM mode and keep parser flags enabled:
+
+```bash
+vllm-mlx serve <vlm-model-id> \
+  --mllm \
+  --enable-auto-tool-choice \
+  --tool-call-parser auto
+```
+
+Notes:
+- `tools` and `tool_choice` are passed into the MLLM chat-template path.
+- Structured `tool_calls` are still parser/model-format dependent.
+- `tool_choice` is best-effort: templates that do not support it fall back safely.
+
 ## Supported Parsers
 
 Use `--tool-call-parser` to select a parser for your model family:

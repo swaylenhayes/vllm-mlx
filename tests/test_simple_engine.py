@@ -316,3 +316,141 @@ class TestSimpleEngineThinkingBudget:
             assert result.finish_reason == "stop"
             model.chat.assert_not_called()
             assert engine._stream_llm_with_forced_think_exit.call_count == 1
+
+
+class TestSimpleEngineToolChoicePassthrough:
+    """Test tool/tool_choice propagation for LLM and MLLM paths."""
+
+    @pytest.mark.asyncio
+    async def test_mllm_chat_passes_tools_and_tool_choice(self):
+        from vllm_mlx.engine.simple import SimpleEngine
+
+        model = MagicMock()
+        model.chat = MagicMock(
+            return_value=MagicMock(
+                text='<tool_call>{"name":"search_files","arguments":{"q":"x"}}</tool_call>',
+                prompt_tokens=12,
+                completion_tokens=4,
+                finish_reason="stop",
+            )
+        )
+
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_files",
+                    "description": "Search files",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"q": {"type": "string"}},
+                        "required": ["q"],
+                    },
+                },
+            }
+        ]
+        tool_choice = {"type": "function", "function": {"name": "search_files"}}
+
+        with patch("vllm_mlx.engine.simple.is_mllm_model", return_value=True):
+            engine = SimpleEngine("test-mllm")
+            engine._model = model
+            engine._loaded = True
+
+            await engine.chat(
+                messages=[{"role": "user", "content": "Find X"}],
+                tools=tools,
+                tool_choice=tool_choice,
+                max_tokens=32,
+            )
+
+            _, kwargs = model.chat.call_args
+            assert kwargs["tools"] == tools
+            assert kwargs["tool_choice"] == tool_choice
+
+    @pytest.mark.asyncio
+    async def test_mllm_stream_chat_passes_tools_and_tool_choice(self):
+        from vllm_mlx.engine.simple import SimpleEngine
+
+        chunk1 = MagicMock()
+        chunk1.text = "<tool_call>"
+        chunk1.finish_reason = None
+        chunk1.prompt_tokens = 8
+        chunk2 = MagicMock()
+        chunk2.text = "</tool_call>"
+        chunk2.finish_reason = "stop"
+        chunk2.prompt_tokens = 8
+
+        model = MagicMock()
+        model.stream_chat = MagicMock(return_value=iter([chunk1, chunk2]))
+
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_files",
+                    "description": "Search files",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ]
+        tool_choice = "required"
+
+        with patch("vllm_mlx.engine.simple.is_mllm_model", return_value=True):
+            engine = SimpleEngine("test-mllm")
+            engine._model = model
+            engine._loaded = True
+
+            outputs = []
+            async for output in engine.stream_chat(
+                messages=[{"role": "user", "content": "Find X"}],
+                tools=tools,
+                tool_choice=tool_choice,
+                max_tokens=16,
+            ):
+                outputs.append(output)
+
+            assert outputs
+            _, kwargs = model.stream_chat.call_args
+            assert kwargs["tools"] == tools
+            assert kwargs["tool_choice"] == tool_choice
+
+    @pytest.mark.asyncio
+    async def test_llm_chat_does_not_leak_tool_choice_to_model_call(self):
+        from vllm_mlx.engine.simple import SimpleEngine
+
+        model = MagicMock()
+        model.tokenizer = MagicMock()
+        model.tokenizer.apply_chat_template = MagicMock(return_value="prompt")
+        model.chat = MagicMock(
+            return_value=MagicMock(
+                text="ok",
+                tokens=[1, 2],
+                finish_reason="stop",
+            )
+        )
+
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_files",
+                    "description": "Search files",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ]
+
+        with patch("vllm_mlx.engine.simple.is_mllm_model", return_value=False):
+            engine = SimpleEngine("test-llm")
+            engine._model = model
+            engine._loaded = True
+
+            await engine.chat(
+                messages=[{"role": "user", "content": "Find X"}],
+                tools=tools,
+                tool_choice="required",
+                max_tokens=16,
+            )
+
+            _, chat_kwargs = model.chat.call_args
+            assert "tool_choice" not in chat_kwargs

@@ -51,6 +51,7 @@ The phase table above covers speed. The fork also changed model usability and ru
 | Single-user runtime path | Batched path could produce runaway generation on some models | `--runtime-mode auto` selects simple engine for single-user usage | Cleaner EOS/stop behavior for affected models |
 | Thinking-model output | `<think>...</think>` could interfere with downstream parsing | Reasoning parser flow hardened; parser ordering fixed | Cleaner assistant content and better tool extraction |
 | LiquidAI/WaveCut tool calls | LiquidAI format not recognized | Added parser: `liquidai` / `liquid` / `lfm` | Structured `tool_calls` can now be extracted |
+| MLLM tool-calling path | VLM requests could accept `tools` but MLLM path did not inject tool metadata consistently | Added MLLM tool/template passthrough (`tools` + `tool_choice`) in simple and batched chat paths | VLM models can now emit structured `tool_calls` in `--mllm` mode (parser/model-template dependent) |
 | Decode controls | No OpenAI-style frequency control | Added `frequency_penalty` mapping to repetition penalty | API clients can tune repetition behavior consistently |
 
 Serve profile used for local reliability work:
@@ -76,6 +77,14 @@ For LiquidAI/WaveCut tool-calling models:
 vllm-mlx serve <model-id> \
   --localhost --runtime-mode auto --cache-strategy auto \
   --enable-auto-tool-choice --tool-call-parser liquidai
+```
+
+For VLM/MLLM tool-calling models:
+
+```bash
+vllm-mlx serve <vlm-model-id> \
+  --localhost --mllm --runtime-mode auto --cache-strategy auto \
+  --enable-auto-tool-choice --tool-call-parser auto
 ```
 
 Latest shipped fork update for thinking-model tool-calling: `9c07636` (P1.10)
@@ -124,6 +133,7 @@ Current caveat:
 - Engine-level forced think exit applies to `SimpleEngine` LLM path (`--runtime-mode auto`/`simple` when routed there).
 - Other engine paths keep API-layer thinking-budget handling.
 - Spray mitigation reduces burst noise but does not guarantee the selected call is semantically optimal.
+- MLLM tool-calling quality still depends on model/template behavior and parser fit; use the parser that matches model output format.
 
 Detailed model compatibility notes and re-evaluation summary:
 - [`docs/benchmarks/fork-benefits.md`](docs/benchmarks/fork-benefits.md)
