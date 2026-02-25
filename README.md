@@ -87,6 +87,10 @@ vllm-mlx serve <vlm-model-id> \
   --enable-auto-tool-choice --tool-call-parser auto
 ```
 
+Validated on this profile:
+- `Qwen3-VL-4B-Instruct-4bit` (Tier C: `9/9`)
+- `ZwZ-8B-VL-4bit` (Tier C: `9/9`, plus image+tool mixed request success)
+
 Latest shipped fork updates for thinking-model tool-calling:
 
 - `9c07636` (P1.10): engine-level forced think exit in `SimpleEngine` LLM path.
@@ -125,6 +129,19 @@ I6 takeaway:
 - Spray mitigation is working for exact duplicate bursts.
 - Universal budget `256` across all models is not confirmed; per-model profiling is still required.
 
+I7 validation snapshot (MLLM tool-calling; baseline `0/9` -> post-I7 `9/9`):
+
+| Model | Parser | Pre-I7 | Post-I7 | Calls per probe | Avg latency | finish_reason |
+|---|---|---:|---:|---:|---:|---|
+| Qwen3-VL-4B-Instruct-4bit | `auto` | `0/9` | **`9/9`** | `1` | `0.86s` | `tool_calls` |
+| ZwZ-8B-VL-4bit | `auto` | `0/9` | **`9/9`** | `1` | `1.12s` | `tool_calls` |
+
+Image+tool mixed request validation:
+- Model: `ZwZ-8B-VL-4bit`
+- Input: image + `read_file(path)` schema in one request
+- Output: structured `tool_calls` with `finish_reason=tool_calls` (`1.40s`)
+- Note: tool argument quality remains model-dependent; engine/tool pipeline behavior is validated.
+
 Recommended serve profiles for these models:
 
 ```bash
@@ -151,7 +168,7 @@ Current caveat:
 - Engine-level forced think exit applies to `SimpleEngine` LLM path (`--runtime-mode auto`/`simple` when routed there).
 - Other engine paths keep API-layer thinking-budget handling.
 - Spray mitigation reduces burst noise but does not guarantee the selected call is semantically optimal.
-- MLLM tool-calling quality still depends on model/template behavior and parser fit; use the parser that matches model output format.
+- MLLM tool-calling is validated for two Qwen-family VLMs on `--tool-call-parser auto`; other model families may still require parser/profile tuning.
 - Small-model single-run results can vary; use repeated runs for production budget baselines.
 
 Detailed model compatibility notes and re-evaluation summary:

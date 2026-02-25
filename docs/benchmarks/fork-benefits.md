@@ -4,7 +4,7 @@ This page summarizes what the fork changed beyond raw throughput numbers.
 
 Scope date: 2026-02-25  
 Fork: `swaylenhayes/vllm-mlx`  
-Current head for these changes: `219cfda`
+Current head for these notes: `c25a85a` (I7 behavior validated on `219cfda`)
 
 ## Why this exists
 
@@ -19,6 +19,7 @@ From local model re-evaluation runs, the fork runtime policy and parser work imp
 |---|---|---|---|
 | LiquidAI LFM / WaveCut | Unparsed proprietary tool-call format | `--tool-call-parser liquidai` | Tool-call extraction path now available |
 | Thinking-heavy models | Large reasoning blocks reduced usable output budget | Reasoning parser improvements and `max_thinking_tokens` control | Better control over visible answer/tool budget |
+| Qwen-family VLMs in MLLM mode | Tool metadata accepted but dropped in MLLM path (`0/9`) | I7 MLLM passthrough (`tools` + `tool_choice`) | Validated `9/9` tool-calling on two VLMs |
 | Repetition-prone prompts | Limited request-level repetition tuning | `frequency_penalty` API support | Client-side tuning now possible |
 
 ## P1.10 validation outcomes (2026-02-25)
@@ -52,6 +53,24 @@ Interpretation:
 - I6 is safe to ship and does not show a clear regression signature tied to dedupe logic.
 - I6 clearly helps exact duplicate spray.
 - A universal budget is still not proven; repeated-run profiling remains required.
+
+## I7 validation outcomes (2026-02-25)
+
+MLLM tool-calling validation (`0/9` baseline -> `219cfda`):
+
+| Model | Parser | Baseline | Latest | Calls/probe | Avg latency | finish_reason |
+|---|---|---:|---:|---:|---:|---|
+| Qwen3-VL-4B-Instruct-4bit | `auto` | `0/9` | `9/9` | `1` | `0.86s` | `tool_calls` |
+| ZwZ-8B-VL-4bit | `auto` | `0/9` | `9/9` | `1` | `1.12s` | `tool_calls` |
+
+Mixed image+tool request:
+- `ZwZ-8B-VL-4bit` emitted structured `tool_calls` with `finish_reason=tool_calls` in `1.40s`.
+- Engine behavior is validated; argument quality remains model-dependent.
+
+Interpretation:
+- I7 hypothesis is confirmed for the validated models/workload.
+- Single-model VLM+tool operation is now viable for this tested set.
+- Broader VLM-family coverage remains incremental follow-up.
 
 ## Fork runtime profile
 

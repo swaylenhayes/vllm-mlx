@@ -62,6 +62,10 @@ Notes:
 - `tools` and `tool_choice` are passed into the MLLM chat-template path.
 - Structured `tool_calls` are still parser/model-format dependent.
 - `tool_choice` is best-effort: templates that do not support it fall back safely.
+- Validated on:
+  - `Qwen3-VL-4B-Instruct-4bit` (`9/9` Tier C probes, parser `auto`)
+  - `ZwZ-8B-VL-4bit` (`9/9` Tier C probes, parser `auto`)
+- Mixed image+tool request behavior is validated (image input + structured `tool_calls` in one request).
 
 ## Supported Parsers
 

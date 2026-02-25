@@ -9,6 +9,43 @@ Rules:
 
 ## Entries
 
+### 2026-02-25 - `219cfda` (I7 MLLM tool-calling validation)
+
+- Change:
+  - Enabled MLLM tool-calling metadata passthrough (`tools` + `tool_choice`) across simple and batched chat paths.
+  - Propagated `tool_choice` through server request plumbing.
+- Measurement status: benchmarked (Tier C + mixed image/tool probe)
+- Measurement setup:
+  - Models: `Qwen3-VL-4B-Instruct-4bit`, `ZwZ-8B-VL-4bit`
+  - Runtime profile:
+    - `--localhost --mllm --runtime-mode auto --cache-strategy auto`
+    - `--enable-auto-tool-choice --tool-call-parser auto`
+  - Workload:
+    - Tier C probes (`slack`, `file-search`, `weather`)
+    - mixed image+tool request (single request with image + tool schema)
+  - Compared states:
+    - Pre-I7 baseline: VLM MLLM tool-calling `0/9`
+    - Post-I7 validation target: `219cfda`
+- Baseline:
+  - Commit: pre-I7 MLLM path
+  - Key metric(s):
+    - Qwen3-VL-4B-Instruct-4bit: `0/9`
+    - ZwZ-8B-VL-4bit: `0/9`
+- Result:
+  - Commit: `219cfda`
+  - Key metric(s):
+    - Qwen3-VL-4B-Instruct-4bit: `9/9`, avg latency `0.86s`, `finish_reason=tool_calls`
+    - ZwZ-8B-VL-4bit: `9/9`, avg latency `1.12s`, `finish_reason=tool_calls`
+    - Mixed image+tool request: structured tool call emitted (`finish_reason=tool_calls`, `1.40s`)
+  - Delta:
+    - `0/9 -> 9/9` on both validated VLMs
+- Caveats:
+  - Validation currently covers two Qwen-family VLMs; other model families may require parser/profile tuning.
+  - Mixed image+tool engine behavior is correct; argument quality remains model-dependent.
+- Links:
+  - Validation source: local workspace spec `i7-validation-results-2026-02-25.md`
+  - Compatibility detail: [`fork-benefits.md`](fork-benefits.md)
+
 ### 2026-02-25 - `05869bc` (I6 validation sweep on latest branch state `219cfda`)
 
 - Change:
