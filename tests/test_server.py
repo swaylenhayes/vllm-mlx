@@ -567,6 +567,105 @@ class TestHelperFunctions:
         assert len(filtered) == 1
         assert filtered[0].function.name == "search_files"
 
+    def test_coerce_tool_arguments_stringifies_object_when_schema_expects_string(self):
+        import json
+        import vllm_mlx.server as server
+
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "write_file",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string"},
+                            "content": {"type": "string"},
+                        },
+                    },
+                },
+            }
+        ]
+        arguments = '{"path":"foo.txt","content":{"hello":"world"}}'
+
+        coerced = server._coerce_tool_arguments(arguments, "write_file", tools)
+        parsed = json.loads(coerced)
+        assert isinstance(parsed["content"], str)
+        assert json.loads(parsed["content"]) == {"hello": "world"}
+
+    def test_coerce_tool_call_delta_arguments_handles_streaming_function_shape(self):
+        import json
+        import vllm_mlx.server as server
+
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "write_file",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string"},
+                            "content": {"type": "string"},
+                        },
+                    },
+                },
+            }
+        ]
+        tool_call = {
+            "id": "call_1",
+            "type": "function",
+            "function": {
+                "name": "write_file",
+                "arguments": '{"path":"foo.txt","content":{"hello":"world"}}',
+            },
+        }
+
+        coerced = server._coerce_tool_call_delta_arguments(tool_call, tools)
+        parsed = json.loads(coerced["function"]["arguments"])
+        assert isinstance(parsed["content"], str)
+        assert json.loads(parsed["content"]) == {"hello": "world"}
+
+    def test_parse_tool_calls_with_mitigation_coerces_tool_arguments(self, monkeypatch):
+        import json
+        import vllm_mlx.server as server
+
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "write_file",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "content": {"type": "string"},
+                        },
+                    },
+                },
+            }
+        ]
+        calls = [
+            server.ToolCall(
+                id="call_1",
+                type="function",
+                function=server.FunctionCall(
+                    name="write_file", arguments='{"content":{"hello":"world"}}'
+                ),
+            )
+        ]
+        monkeypatch.setattr(server, "parse_tool_calls", lambda *_: ("", calls))
+
+        _, parsed_calls = server._parse_tool_calls_with_mitigation(
+            "output",
+            {"tools": tools},
+            source="test",
+        )
+
+        assert parsed_calls is not None
+        args = json.loads(parsed_calls[0].function.arguments)
+        assert isinstance(args["content"], str)
+        assert json.loads(args["content"]) == {"hello": "world"}
+
     def test_tool_call_spray_policy_to_deltas_reindexes(self, monkeypatch):
         import vllm_mlx.server as server
 
