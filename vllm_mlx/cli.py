@@ -27,6 +27,18 @@ class CacheProfile:
     strategy_label: str
 
 
+@dataclass(frozen=True)
+class DeterministicProfile:
+    """Resolved deterministic profile options for reproducible diagnostics."""
+
+    enabled: bool
+    use_batching: bool
+    runtime_mode_reason: str
+    forced_temperature: float | None
+    forced_top_p: float | None
+    serialize_tracked_routes: bool
+
+
 def _resolve_bind_host(host: str, localhost: bool) -> str:
     """Resolve bind host with localhost profile precedence."""
     return "127.0.0.1" if localhost else host
@@ -44,6 +56,7 @@ def _build_startup_diagnostics(
     rate_limit: int,
     runtime_mode: str,
     cache_profile: CacheProfile | None = None,
+    deterministic_profile: DeterministicProfile | None = None,
 ) -> list[str]:
     """Build operator-facing startup diagnostics for risky local configurations."""
     diagnostics: list[str] = []
@@ -95,6 +108,14 @@ def _build_startup_diagnostics(
             diagnostics.append(
                 "INFO: Warm-cache guidance: send a representative request after startup to seed cache entries."
             )
+    if deterministic_profile is not None and deterministic_profile.enabled:
+        diagnostics.append(
+            "INFO: Deterministic profile enabled: forcing simple runtime, greedy sampling "
+            "(temperature=0, top_p=1), and serialized tracked inference routes."
+        )
+        diagnostics.append(
+            "INFO: Deterministic profile is for reproducibility diagnostics; expect lower throughput under load."
+        )
 
     return diagnostics
 
@@ -156,6 +177,40 @@ def _resolve_cache_profile(args, use_batching: bool) -> CacheProfile:
         use_memory_aware_cache=use_memory_aware_cache,
         use_paged_cache=use_paged_cache,
         strategy_label=strategy_label,
+    )
+
+
+def _resolve_deterministic_profile(
+    *,
+    deterministic: bool,
+    use_batching: bool,
+    runtime_mode_reason: str,
+) -> DeterministicProfile:
+    """Resolve deterministic mode behavior as an additive runtime policy."""
+    if not deterministic:
+        return DeterministicProfile(
+            enabled=False,
+            use_batching=use_batching,
+            runtime_mode_reason=runtime_mode_reason,
+            forced_temperature=None,
+            forced_top_p=None,
+            serialize_tracked_routes=False,
+        )
+
+    if use_batching:
+        reason = (
+            "deterministic profile: forcing simple mode (overrode batched runtime selection)"
+        )
+    else:
+        reason = "deterministic profile: simple mode with reproducible sampling controls"
+
+    return DeterministicProfile(
+        enabled=True,
+        use_batching=False,
+        runtime_mode_reason=reason,
+        forced_temperature=0.0,
+        forced_top_p=1.0,
+        serialize_tracked_routes=True,
     )
 
 
@@ -228,10 +283,10 @@ def serve_command(args):
         server._tool_call_parser = None
 
     # Configure generation defaults
-    if args.default_temperature is not None:
-        server._default_temperature = args.default_temperature
-    if args.default_top_p is not None:
-        server._default_top_p = args.default_top_p
+    server._default_temperature = args.default_temperature
+    server._default_top_p = args.default_top_p
+    server._deterministic_mode = False
+    server._deterministic_serialize = False
 
     # Configure reasoning parser
     if args.reasoning_parser:
@@ -278,7 +333,21 @@ def serve_command(args):
         observed_peak=observed_peak,
         threshold=args.runtime_mode_threshold,
     )
+    deterministic_profile = _resolve_deterministic_profile(
+        deterministic=args.deterministic,
+        use_batching=use_batching,
+        runtime_mode_reason=runtime_mode_reason,
+    )
+    use_batching = deterministic_profile.use_batching
+    runtime_mode_reason = deterministic_profile.runtime_mode_reason
     runtime_mode = "batched" if use_batching else "simple"
+
+    if deterministic_profile.enabled:
+        server._deterministic_mode = True
+        server._deterministic_serialize = deterministic_profile.serialize_tracked_routes
+        server._default_temperature = deterministic_profile.forced_temperature
+        server._default_top_p = deterministic_profile.forced_top_p
+
     cache_profile = _resolve_cache_profile(args, use_batching=use_batching)
 
     # Security summary at startup
@@ -308,6 +377,13 @@ def serve_command(args):
         f"action={args.batch_divergence_action} "
         f"interval={args.batch_divergence_interval:.1f}s"
     )
+    if deterministic_profile.enabled:
+        print(
+            "  Deterministic profile: ENABLED "
+            "(runtime=simple, temperature=0.0, top_p=1.0, serialize=true)"
+        )
+    else:
+        print("  Deterministic profile: DISABLED")
     if args.enable_auto_tool_choice:
         print(f"  Tool calling: ENABLED (parser: {args.tool_call_parser})")
     else:
@@ -428,6 +504,7 @@ def serve_command(args):
         rate_limit=args.rate_limit,
         runtime_mode=runtime_mode,
         cache_profile=cache_profile if use_batching else None,
+        deterministic_profile=deterministic_profile,
     )
     for diagnostic in diagnostics:
         print(f"  {diagnostic}")
@@ -973,6 +1050,15 @@ Examples:
         type=int,
         default=2,
         help="Peak concurrency threshold for selecting batched mode when --runtime-mode=auto (default: 2).",
+    )
+    serve_parser.add_argument(
+        "--deterministic",
+        action="store_true",
+        help=(
+            "Enable reproducibility profile: force simple runtime, "
+            "greedy sampling (temperature=0, top_p=1), and serialize tracked "
+            "inference routes."
+        ),
     )
     serve_parser.add_argument(
         "--continuous-batching",

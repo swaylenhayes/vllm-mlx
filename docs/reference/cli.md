@@ -35,6 +35,7 @@ vllm-mlx serve <model> [options]
 | `--batch-divergence-threshold` | Minimum token agreement before divergence warning (0-1) | 0.95 |
 | `--batch-divergence-action` | Divergence action (`warn`, `serialize`) | warn |
 | `--timeout` | Request timeout in seconds | 300 |
+| `--deterministic` | Reproducibility profile (simple runtime + greedy sampling + serialized tracked routes) | False |
 | `--continuous-batching` | Enable batching for multi-user | False |
 | `--cache-memory-mb` | Cache memory limit in MB | Auto |
 | `--cache-memory-percent` | Fraction of RAM for cache | 0.20 |
@@ -103,6 +104,11 @@ vllm-mlx serve mlx-community/Qwen3-4B-4bit \
   --rate-limit 60 \
   --timeout 120 \
   --continuous-batching
+
+# Deterministic diagnostics profile (reproducibility over throughput)
+vllm-mlx serve mlx-community/Qwen3-4B-4bit \
+  --localhost \
+  --deterministic
 ```
 
 ### Security

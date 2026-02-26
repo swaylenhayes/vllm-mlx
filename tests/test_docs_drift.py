@@ -28,6 +28,7 @@ TRACKED_SERVER_OPTIONS = {
     "--timeout",
     "--runtime-mode",
     "--runtime-mode-threshold",
+    "--deterministic",
     "--continuous-batching",
     "--cache-strategy",
     "--use-paged-cache",

@@ -458,6 +458,57 @@ class TestHelperFunctions:
         assert check.status == "pass"
         assert "disabled" in check.detail.lower()
 
+    def test_resolve_sampling_values_force_deterministic_mode(self, monkeypatch):
+        import vllm_mlx.server as server
+
+        monkeypatch.setattr(server, "_deterministic_mode", True)
+        monkeypatch.setattr(server, "_default_temperature", 0.8)
+        monkeypatch.setattr(server, "_default_top_p", 0.2)
+
+        assert server._resolve_temperature(0.9) == 0.0
+        assert server._resolve_top_p(0.1) == 1.0
+
+    @pytest.mark.asyncio
+    async def test_middleware_uses_serialize_lock_in_deterministic_mode(
+        self, monkeypatch
+    ):
+        import vllm_mlx.server as server
+        from fastapi import Request, Response
+        from starlette.datastructures import URL
+
+        class _DummyClient:
+            host = "127.0.0.1"
+
+        class _DummyRequest:
+            url = URL("http://localhost:8000/v1/chat/completions")
+            client = _DummyClient()
+
+        class _DummyLock:
+            def __init__(self):
+                self.entered = 0
+
+            async def __aenter__(self):
+                self.entered += 1
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        dummy_lock = _DummyLock()
+        monkeypatch.setattr(server, "_deterministic_serialize", True)
+        monkeypatch.setattr(server, "_batch_serialize_lock", dummy_lock)
+
+        state = server.BatchDivergenceState()
+        state.configure(enabled=False, threshold=0.95, action="warn")
+        monkeypatch.setattr(server, "_batch_divergence_state", state)
+
+        async def _call_next(_req: Request):
+            return Response(content="ok", media_type="text/plain")
+
+        response = await server.track_runtime_concurrency(_DummyRequest(), _call_next)
+        assert response.status_code == 200
+        assert dummy_lock.entered == 1
+
     def test_tool_call_spray_policy_dedupes_exact_duplicates(self):
         import vllm_mlx.server as server
 

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from vllm_mlx.cli import _build_startup_diagnostics, _resolve_cache_profile
+from vllm_mlx.cli import (
+    _build_startup_diagnostics,
+    _resolve_cache_profile,
+    _resolve_deterministic_profile,
+)
 
 
 def _make_args(**overrides):
@@ -58,3 +62,31 @@ def test_resolve_cache_profile_legacy_strategy():
     assert profile.use_paged_cache is False
     assert profile.use_memory_aware_cache is False
     assert profile.strategy_label == "legacy"
+
+
+def test_resolve_deterministic_profile_disabled_keeps_runtime_selection():
+    profile = _resolve_deterministic_profile(
+        deterministic=False,
+        use_batching=True,
+        runtime_mode_reason="auto mode selected batched",
+    )
+    assert profile.enabled is False
+    assert profile.use_batching is True
+    assert profile.runtime_mode_reason == "auto mode selected batched"
+    assert profile.forced_temperature is None
+    assert profile.forced_top_p is None
+    assert profile.serialize_tracked_routes is False
+
+
+def test_resolve_deterministic_profile_forces_simple_and_greedy():
+    profile = _resolve_deterministic_profile(
+        deterministic=True,
+        use_batching=True,
+        runtime_mode_reason="auto mode selected batched",
+    )
+    assert profile.enabled is True
+    assert profile.use_batching is False
+    assert profile.forced_temperature == 0.0
+    assert profile.forced_top_p == 1.0
+    assert profile.serialize_tracked_routes is True
+    assert "forcing simple mode" in profile.runtime_mode_reason

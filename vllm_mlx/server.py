@@ -134,6 +134,8 @@ _default_timeout: float = 300.0  # Default request timeout in seconds (5 minutes
 _default_temperature: float | None = None  # Set via --default-temperature
 _default_top_p: float | None = None  # Set via --default-top-p
 _max_thinking_tokens: int | None = None  # Set via --max-thinking-tokens
+_deterministic_mode: bool = False  # Set via --deterministic
+_deterministic_serialize: bool = False  # Serialize tracked routes when deterministic
 
 _FALLBACK_TEMPERATURE = 0.7
 _FALLBACK_TOP_P = 0.9
@@ -399,6 +401,8 @@ _batch_serialize_lock: asyncio.Lock | None = None
 
 def _resolve_temperature(request_value: float | None) -> float:
     """Resolve temperature: request > CLI default > fallback."""
+    if _deterministic_mode:
+        return 0.0
     if request_value is not None:
         return request_value
     if _default_temperature is not None:
@@ -408,6 +412,8 @@ def _resolve_temperature(request_value: float | None) -> float:
 
 def _resolve_top_p(request_value: float | None) -> float:
     """Resolve top_p: request > CLI default > fallback."""
+    if _deterministic_mode:
+        return 1.0
     if request_value is not None:
         return request_value
     if _default_top_p is not None:
@@ -740,10 +746,8 @@ async def track_runtime_concurrency(request: Request, call_next):
             if should_track:
                 _concurrency_tracker.exit()
 
-    if (
-        should_track
-        and _batch_divergence_state.should_serialize()
-        and _batch_serialize_lock is not None
+    if should_track and _batch_serialize_lock is not None and (
+        _deterministic_serialize or _batch_divergence_state.should_serialize()
     ):
         async with _batch_serialize_lock:
             return await _invoke()
@@ -1976,6 +1980,8 @@ def _check_batch_invariance_status() -> DiagnosticCheck:
         "enabled": snapshot.get("enabled"),
         "threshold": snapshot.get("threshold"),
         "action": snapshot.get("action"),
+        "deterministic_mode": _deterministic_mode,
+        "deterministic_serialize": _deterministic_serialize,
         "engine_type": snapshot.get("engine_type"),
         "sample_count": snapshot.get("sample_count"),
         "last_checked_epoch": snapshot.get("last_checked_epoch"),
@@ -3878,6 +3884,15 @@ Examples:
         help="Enable continuous batching for multiple concurrent users",
     )
     parser.add_argument(
+        "--deterministic",
+        action="store_true",
+        help=(
+            "Enable reproducibility profile: force simple runtime, "
+            "greedy sampling (temperature=0, top_p=1), and serialize tracked "
+            "inference routes."
+        ),
+    )
+    parser.add_argument(
         "--mcp-config",
         type=str,
         default=None,
@@ -4013,6 +4028,7 @@ Examples:
     global _batch_divergence_monitor_enabled, _batch_divergence_interval_seconds
     global _batch_divergence_threshold, _batch_divergence_action
     global _default_temperature, _default_top_p, _max_thinking_tokens
+    global _deterministic_mode, _deterministic_serialize
     _api_key = args.api_key
     _default_timeout = args.timeout
     _max_thinking_tokens = args.max_thinking_tokens
@@ -4041,10 +4057,13 @@ Examples:
         threshold=_batch_divergence_threshold,
         action=_batch_divergence_action,
     )
-    if args.default_temperature is not None:
-        _default_temperature = args.default_temperature
-    if args.default_top_p is not None:
-        _default_top_p = args.default_top_p
+    _default_temperature = args.default_temperature
+    _default_top_p = args.default_top_p
+    _deterministic_mode = bool(args.deterministic)
+    _deterministic_serialize = bool(args.deterministic)
+    if _deterministic_mode:
+        _default_temperature = 0.0
+        _default_top_p = 1.0
 
     # Configure rate limiter
     if args.rate_limit > 0:
@@ -4080,6 +4099,12 @@ Examples:
         args.batch_divergence_action,
         args.batch_divergence_interval,
     )
+    if _deterministic_mode:
+        logger.info(
+            "  Deterministic profile: ENABLED (runtime=simple, temperature=0.0, top_p=1.0, serialize=true)"
+        )
+    else:
+        logger.info("  Deterministic profile: DISABLED")
     logger.info("=" * 60)
 
     # Set MCP config for lifespan
@@ -4104,7 +4129,7 @@ Examples:
     # Load model before starting server
     load_model(
         args.model,
-        use_batching=args.continuous_batching,
+        use_batching=(args.continuous_batching and not _deterministic_mode),
         max_tokens=args.max_tokens,
         force_mllm=args.mllm,
     )

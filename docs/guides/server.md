@@ -28,6 +28,17 @@ Memory-efficient caching for production:
 vllm-mlx serve mlx-community/Llama-3.2-3B-Instruct-4bit --port 8000 --continuous-batching --use-paged-cache
 ```
 
+### Deterministic Diagnostics Profile
+
+Use this when reproducibility is more important than throughput.
+
+```bash
+vllm-mlx serve mlx-community/Llama-3.2-3B-Instruct-4bit --port 8000 --deterministic
+```
+
+`--deterministic` forces simple runtime mode, greedy sampling
+(`temperature=0.0`, `top_p=1.0`), and serialized tracked inference routes.
+
 ## Server Options
 
 | Option | Description | Default |
@@ -48,6 +59,7 @@ vllm-mlx serve mlx-community/Llama-3.2-3B-Instruct-4bit --port 8000 --continuous
 | `--timeout` | Request timeout in seconds | 300 |
 | `--runtime-mode` | Runtime mode policy (`auto`, `simple`, `batched`) | auto |
 | `--runtime-mode-threshold` | Auto mode threshold for selecting batched mode | 2 |
+| `--deterministic` | Reproducibility profile (simple runtime + greedy sampling + serialized tracked routes) | False |
 | `--continuous-batching` | Legacy override to force batched runtime mode | False |
 | `--cache-strategy` | Cache strategy policy (`auto`, `memory-aware`, `paged`, `legacy`) | auto |
 | `--use-paged-cache` | Enable paged KV cache | False |

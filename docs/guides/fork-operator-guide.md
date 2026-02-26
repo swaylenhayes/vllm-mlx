@@ -55,6 +55,16 @@ vllm-mlx serve mlx-community/Qwen3-4B-Instruct-2507-4bit \
   --enable-auto-tool-choice --tool-call-parser auto
 ```
 
+### Profile D: Deterministic diagnostics (repro runs)
+
+Use this for repeatable bug reproduction and validation; throughput will be lower.
+
+```bash
+vllm-mlx serve mlx-community/Qwen3-4B-Instruct-2507-4bit \
+  --localhost --port 8000 \
+  --deterministic
+```
+
 ## 3) Verify server contract quickly
 
 ```bash
