@@ -9,6 +9,46 @@ Rules:
 
 ## Entries
 
+### 2026-02-25 - `d33283d` + R2C live dataset (batch divergence confidence pass)
+
+- Change:
+  - Upgraded batch invariance harness with repeated-run confidence support (`--runs`, `--confidence`, `--run-cooldown`) and connection retry handling.
+  - Collected first full R2C live dataset (5 runs/model) for text + two VLM models under batched runtime conditions.
+- Measurement status: benchmarked
+- Measurement setup:
+  - Models:
+    - `mlx-community/Qwen3-4B-Instruct-2507-4bit`
+    - `swaylenhayes/ZwZ-8B-VL-MLX-4bit`
+    - `mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit`
+  - Runtime profile:
+    - `vllm-mlx serve <model> --localhost --port 8000 --runtime-mode auto --cache-strategy auto`
+    - plus `--mllm` for VLM models
+  - Workload:
+    - 10 fixed prompts, deterministic decode
+    - serial vs concurrent (`concurrency=2`)
+    - repeated runs: `N=5`, confidence level `95%`
+- Baseline:
+  - R2A one-pass baseline at `38e13c8` showed all models below 95% token agreement.
+- Result:
+  - Qwen3-4B-Instruct-2507-4bit:
+    - token agreement `97.86%` (95% CI `97.86-97.86`)
+    - exact match `80.00%`
+  - ZwZ-8B-VL-MLX-4bit:
+    - token agreement `68.65%` (95% CI `65.82-71.49`)
+    - exact match `34.00%`
+  - Qwen3-VL-30B-A3B-Instruct-4bit:
+    - token agreement `63.85%` (95% CI `57.20-70.50`)
+    - exact match `32.00%`
+  - Delta:
+    - Text model moved from prior fail state to above-threshold under lower-concurrency repeated protocol.
+    - Both VLM models remain well below threshold with confidence bands that do not approach 95%.
+- Caveats:
+  - This profile uses `concurrency=2`, not the earlier stress setting (`10`); values are not directly interchangeable.
+  - Exact-match variability remains non-trivial even on the passing text model.
+- Links:
+  - Summary: `benchmarks/phase-results/batch-invariance-2026-02-25/summary.md`
+  - Per-model JSON reports: `*_r2c.json`
+
 ### 2026-02-25 - `38e13c8` (R2A batch invariance baseline run)
 
 - Change:

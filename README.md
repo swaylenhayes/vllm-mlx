@@ -42,6 +42,25 @@ Delta summary:
 
 Detailed benchmark snapshots are stored in `benchmarks/phase-results/`.
 
+### R2C Batch Invariance (Repeated-Run, Batched Path)
+
+Configuration:
+- Harness: `scripts/batch_invariance_harness.py`
+- Runs: `5`, confidence: `95%`, concurrency: `2`, `max_tokens=32`
+- Runtime mode: `auto` with batched engine active for concurrent pass
+
+Results:
+
+| Model | Token agreement (mean, 95% CI) | Exact match (mean) | Verdict |
+|---|---:|---:|---|
+| Qwen3-4B-Instruct-2507-4bit | `97.86%` (`97.86-97.86`) | `80.00%` | Passes `>=95%` token gate |
+| ZwZ-8B-VL-MLX-4bit | `68.65%` (`65.82-71.49`) | `34.00%` | Severe divergence |
+| Qwen3-VL-30B-A3B-Instruct-4bit | `63.85%` (`57.20-70.50`) | `32.00%` | Severe divergence |
+
+Operational recommendation from this sweep:
+- Keep global default monitoring profile as `--batch-divergence-action warn --batch-divergence-threshold 0.95`.
+- For correctness-sensitive VLM workloads, run serialized fallback (`--batch-divergence-action serialize`) or force simple runtime profile.
+
 ### What the fork fixes (compatibility impact)
 
 The phase table above covers speed. The fork also changed model usability and runtime behavior.

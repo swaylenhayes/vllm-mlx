@@ -34,6 +34,7 @@ python scripts/batch_invariance_harness.py \
 Latest fork baseline artifacts:
 
 - `benchmarks/phase-results/batch-invariance-2026-02-25/summary.md`
+- `benchmarks/phase-results/batch-invariance-2026-02-25/*_r2c.json`
 
 ## Standalone Test Defaults
 

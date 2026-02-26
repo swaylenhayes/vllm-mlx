@@ -1,0 +1,663 @@
+{
+  "model": "mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit",
+  "base_url": "http://localhost:8000",
+  "prompt_count": 10,
+  "max_tokens": 32,
+  "concurrency": 2,
+  "runs": 5,
+  "confidence_level": 0.95,
+  "exact_match_rate": 0.32,
+  "token_agreement_rate": 0.6384771069288311,
+  "exact_match_summary": {
+    "mean": 0.32,
+    "stdev": 0.04472135954999581,
+    "ci_lower": 0.2808,
+    "ci_upper": 0.3592
+  },
+  "token_agreement_summary": {
+    "mean": 0.6384771069288311,
+    "stdev": 0.07589264829117598,
+    "ci_lower": 0.5719542676647824,
+    "ci_upper": 0.7049999461928798
+  },
+  "rows": [
+    {
+      "index": 0,
+      "prompt": "Write one sentence explaining why caching helps inference throughput.",
+      "serial_output": "Caching helps inference throughput by storing previously computed results, allowing the system to quickly retrieve them instead of recomputing, thereby reducing latency and increasing the number of",
+      "concurrent_output": "Caching helps inference throughput by storing previously computed results, allowing subsequent requests to retrieve answers quickly without repeating the computation.",
+      "token_agreement": 0.4074,
+      "exact_match": false,
+      "serial_latency_s": 0.6664,
+      "concurrent_latency_s": 0.8319
+    },
+    {
+      "index": 1,
+      "prompt": "List three steps to verify an API endpoint is healthy.",
+      "serial_output": "Here are three steps to verify that an API endpoint is healthy:\n\n1. **Send a GET Request**: Send a simple HTTP GET request to the endpoint to check",
+      "concurrent_output": "Here are three steps to verify that an API endpoint is healthy:\n\n1. **Send a HTTP GET Request**: Send a simple GET request to the API endpoint using",
+      "token_agreement": 0.6786,
+      "exact_match": false,
+      "serial_latency_s": 0.6381,
+      "concurrent_latency_s": 0.8862
+    },
+    {
+      "index": 2,
+      "prompt": "What is the capital of France? Answer in one word.",
+      "serial_output": "Paris",
+      "concurrent_output": "Paris",
+      "token_agreement": 1.0,
+      "exact_match": true,
+      "serial_latency_s": 0.1499,
+      "concurrent_latency_s": 0.2859
+    },
+    {
+      "index": 3,
+      "prompt": "Return exactly: ping",
+      "serial_output": "ping",
+      "concurrent_output": "ping",
+      "token_agreement": 1.0,
+      "exact_match": true,
+      "serial_latency_s": 0.1183,
+      "concurrent_latency_s": 0.2315
+    },
+    {
+      "index": 4,
+      "prompt": "Name two risks of running without authentication.",
+      "serial_output": "Two risks of running without authentication are:\n\n1. **Unauthorized Access**: Without authentication, anyone can access the system or service, potentially allowing attackers to steal data,",
+      "concurrent_output": "Two risks of running without authentication are:\n\n1. **Unauthorized Access**: Without authentication, anyone can access the system or application, potentially leading to data breaches, misuse",
+      "token_agreement": 0.76,
+      "exact_match": false,
+      "serial_latency_s": 0.6289,
+      "concurrent_latency_s": 0.9064
+    },
+    {
+      "index": 5,
+      "prompt": "Summarize why deterministic decoding matters in testing.",
+      "serial_output": "Deterministic decoding matters in testing because it ensures that the same input always produces the same output, enabling reliable and repeatable test results. This consistency allows developers to",
+      "concurrent_output": "Deterministic decoding matters in testing because it ensures that the same input always produces the same output, which is crucial for reliable and repeatable test results. This predict",
+      "token_agreement": 0.6071,
+      "exact_match": false,
+      "serial_latency_s": 0.6436,
+      "concurrent_latency_s": 0.9061
+    },
+    {
+      "index": 6,
+      "prompt": "What does a 503 status code usually indicate?",
+      "serial_output": "A **503 Service Unavailable** status code indicates that the server is temporarily unable to handle the request due to being overloaded or down for maintenance. It",
+      "concurrent_output": "A **503 Service Unavailable** status code indicates that the server is temporarily unable to handle the request, usually due to being overloaded or undergoing maintenance.",
+      "token_agreement": 0.6538,
+      "exact_match": false,
+      "serial_latency_s": 0.652,
+      "concurrent_latency_s": 0.9211
+    },
+    {
+      "index": 7,
+      "prompt": "Give a one-line definition of batch invariance.",
+      "serial_output": "Batch invariance refers to a property of a system or model where its behavior or output remains unchanged under transformations or permutations of the input batches.",
+      "concurrent_output": "Batch invariance refers to the property of a model or algorithm that its output remains unchanged regardless of the batch size or how data is grouped into batches during training",
+      "token_agreement": 0.3,
+      "exact_match": false,
+      "serial_latency_s": 0.6058,
+      "concurrent_latency_s": 0.9213
+    },
+    {
+      "index": 8,
+      "prompt": "Provide two bullet points on memory pressure guardrails.",
+      "serial_output": "- Memory pressure guardrails automatically monitor system memory usage and intervene when thresholds are exceeded, preventing applications from consuming excessive resources and causing system instability.  \n- These guard",
+      "concurrent_output": "- Memory pressure guardrails help prevent system crashes by automatically limiting memory usage when resources are nearing capacity, ensuring critical processes remain stable.  \n- They typically trigger mechanisms",
+      "token_agreement": 0.1786,
+      "exact_match": false,
+      "serial_latency_s": 0.6356,
+      "concurrent_latency_s": 0.7528
+    },
+    {
+      "index": 9,
+      "prompt": "Output the word READY and nothing else.",
+      "serial_output": "READY",
+      "concurrent_output": "READY",
+      "token_agreement": 1.0,
+      "exact_match": true,
+      "serial_latency_s": 0.136,
+      "concurrent_latency_s": 0.3427
+    }
+  ],
+  "run_reports": [
+    {
+      "run_index": 0,
+      "exact_match_rate": 0.3,
+      "token_agreement_rate": 0.5984122072053106,
+      "rows": [
+        {
+          "index": 0,
+          "prompt": "Write one sentence explaining why caching helps inference throughput.",
+          "serial_output": "Caching helps inference throughput by storing previously computed results, allowing subsequent requests to retrieve answers faster without repeating computation.",
+          "concurrent_output": "Caching helps inference throughput by storing previously computed results, allowing subsequent requests to be served faster without repeating redundant computations.",
+          "token_agreement": 0.8,
+          "exact_match": false,
+          "serial_latency_s": 1.9644,
+          "concurrent_latency_s": 0.8289
+        },
+        {
+          "index": 1,
+          "prompt": "List three steps to verify an API endpoint is healthy.",
+          "serial_output": "Here are three steps to verify that an API endpoint is healthy:\n\n1. **Send a HTTP GET Request**: Use a tool like `curl`, Postman,",
+          "concurrent_output": "To verify that an API endpoint is healthy, follow these three key steps:\n\n1. **Send a Health Check Request**: Send a simple HTTP request (typically a",
+          "token_agreement": 0.0,
+          "exact_match": false,
+          "serial_latency_s": 0.6438,
+          "concurrent_latency_s": 0.8805
+        },
+        {
+          "index": 2,
+          "prompt": "What is the capital of France? Answer in one word.",
+          "serial_output": "Paris",
+          "concurrent_output": "Paris",
+          "token_agreement": 1.0,
+          "exact_match": true,
+          "serial_latency_s": 0.1493,
+          "concurrent_latency_s": 0.286
+        },
+        {
+          "index": 3,
+          "prompt": "Return exactly: ping",
+          "serial_output": "ping",
+          "concurrent_output": "ping",
+          "token_agreement": 1.0,
+          "exact_match": true,
+          "serial_latency_s": 0.117,
+          "concurrent_latency_s": 0.2342
+        },
+        {
+          "index": 4,
+          "prompt": "Name two risks of running without authentication.",
+          "serial_output": "Running without authentication poses several security risks. Two significant ones are:\n\n1. **Unauthorized Access**: Without authentication, any user or attacker can access the system or application",
+          "concurrent_output": "Two risks of running without authentication are:\n\n1. **Unauthorized Access**: Without authentication, anyone can access the system or application, potentially leading to data breaches, misuse",
+          "token_agreement": 0.0,
+          "exact_match": false,
+          "serial_latency_s": 0.6312,
+          "concurrent_latency_s": 0.8997
+        },
+        {
+          "index": 5,
+          "prompt": "Summarize why deterministic decoding matters in testing.",
+          "serial_output": "Deterministic decoding matters in testing because it ensures that the same input always produces the same output, which is critical for reliable and repeatable test results. This predict",
+          "concurrent_output": "Deterministic decoding matters in testing because it ensures that the same input always produces the same output, which makes test results predictable and reproducible. This consistency allows developers",
+          "token_agreement": 0.6786,
+          "exact_match": false,
+          "serial_latency_s": 0.6287,
+          "concurrent_latency_s": 0.8993
+        },
+        {
+          "index": 6,
+          "prompt": "What does a 503 status code usually indicate?",
+          "serial_output": "A **503 Service Unavailable** status code indicates that the server is temporarily unable to handle the request. This is a **server-side HTTP error**",
+          "concurrent_output": "A **503 Service Unavailable** status code indicates that the server is temporarily unable to handle the request, usually due to being overloaded or down for maintenance",
+          "token_agreement": 0.6154,
+          "exact_match": false,
+          "serial_latency_s": 0.6352,
+          "concurrent_latency_s": 0.9125
+        },
+        {
+          "index": 7,
+          "prompt": "Give a one-line definition of batch invariance.",
+          "serial_output": "Batch invariance refers to a property where a system or model's output remains unchanged under transformations of the input batch, such as permutations or reordering of samples",
+          "concurrent_output": "Batch invariance refers to a property of a system or model that remains unchanged regardless of the batch size or grouping of input data.",
+          "token_agreement": 0.4074,
+          "exact_match": false,
+          "serial_latency_s": 0.6384,
+          "concurrent_latency_s": 0.9118
+        },
+        {
+          "index": 8,
+          "prompt": "Provide two bullet points on memory pressure guardrails.",
+          "serial_output": "- Memory pressure guardrails automatically monitor system memory usage and trigger actions such as reclaiming unused memory or throttling non-critical processes when memory usage approaches critical levels",
+          "concurrent_output": "- Memory pressure guardrails automatically monitor system memory usage and trigger actions such as evicting less critical processes or reducing memory allocations when available memory drops below a predefined",
+          "token_agreement": 0.4828,
+          "exact_match": false,
+          "serial_latency_s": 0.6396,
+          "concurrent_latency_s": 0.7441
+        },
+        {
+          "index": 9,
+          "prompt": "Output the word READY and nothing else.",
+          "serial_output": "READY",
+          "concurrent_output": "READY",
+          "token_agreement": 1.0,
+          "exact_match": true,
+          "serial_latency_s": 0.1372,
+          "concurrent_latency_s": 0.3364
+        }
+      ]
+    },
+    {
+      "run_index": 1,
+      "exact_match_rate": 0.4,
+      "token_agreement_rate": 0.7343750508750508,
+      "rows": [
+        {
+          "index": 0,
+          "prompt": "Write one sentence explaining why caching helps inference throughput.",
+          "serial_output": "Caching helps inference throughput by storing previously computed results, allowing the system to quickly retrieve and reuse them instead of recomputing, thus reducing latency and increasing the",
+          "concurrent_output": "Caching helps inference throughput by storing previously computed results, allowing the system to reuse them instead of recomputing, which reduces latency and increases the number of requests",
+          "token_agreement": 0.4815,
+          "exact_match": false,
+          "serial_latency_s": 0.6621,
+          "concurrent_latency_s": 0.9507
+        },
+        {
+          "index": 1,
+          "prompt": "List three steps to verify an API endpoint is healthy.",
+          "serial_output": "Here are three steps to verify that an API endpoint is healthy:\n\n1. **Send a HTTP GET Request**: Use a tool like cURL, Postman,",
+          "concurrent_output": "Here are three steps to verify that an API endpoint is healthy:\n\n1. **Send a Basic HTTP Request**: Use a tool like `curl`, Postman,",
+          "token_agreement": 0.875,
+          "exact_match": false,
+          "serial_latency_s": 0.6521,
+          "concurrent_latency_s": 0.9507
+        },
+        {
+          "index": 2,
+          "prompt": "What is the capital of France? Answer in one word.",
+          "serial_output": "Paris",
+          "concurrent_output": "Paris",
+          "token_agreement": 1.0,
+          "exact_match": true,
+          "serial_latency_s": 0.1509,
+          "concurrent_latency_s": 0.2349
+        },
+        {
+          "index": 3,
+          "prompt": "Return exactly: ping",
+          "serial_output": "ping",
+          "concurrent_output": "ping",
+          "token_agreement": 1.0,
+          "exact_match": true,
+          "serial_latency_s": 0.1242,
+          "concurrent_latency_s": 0.2349
+        },
+        {
+          "index": 4,
+          "prompt": "Name two risks of running without authentication.",
+          "serial_output": "Two risks of running without authentication are:\n\n1. **Unauthorized Access**: Without authentication, anyone can access the system or application, potentially leading to data breaches, misuse",
+          "concurrent_output": "Two risks of running without authentication are:\n\n1. **Unauthorized Access**: Without authentication, anyone can access the system or application, potentially leading to data breaches, misuse",
+          "token_agreement": 1.0,
+          "exact_match": true,
+          "serial_latency_s": 0.6426,
+          "concurrent_latency_s": 0.9239
+        },
+        {
+          "index": 5,
+          "prompt": "Summarize why deterministic decoding matters in testing.",
+          "serial_output": "Deterministic decoding matters in testing because it ensures that the same input always produces the same output, which is critical for reliable and repeatable test results. This consistency",
+          "concurrent_output": "Deterministic decoding matters in testing because it ensures that the same input consistently produces the same output, enabling reliable and repeatable test results. This consistency allows developers to",
+          "token_agreement": 0.5714,
+          "exact_match": false,
+          "serial_latency_s": 0.6642,
+          "concurrent_latency_s": 0.9237
+        },
+        {
+          "index": 6,
+          "prompt": "What does a 503 status code usually indicate?",
+          "serial_output": "A **503 Service Unavailable** status code indicates that the server is temporarily unable to handle the request, typically due to being overloaded or undergoing maintenance.",
+          "concurrent_output": "A **503 Service Unavailable** status code indicates that the server is temporarily unable to handle the request, usually due to being overloaded or undergoing maintenance.",
+          "token_agreement": 0.96,
+          "exact_match": false,
+          "serial_latency_s": 0.6566,
+          "concurrent_latency_s": 0.9358
+        },
+        {
+          "index": 7,
+          "prompt": "Give a one-line definition of batch invariance.",
+          "serial_output": "Batch invariance refers to a property where a system or model's output remains unchanged under permutations or transformations of the input batches.",
+          "concurrent_output": "Batch invariance refers to the property of a system or algorithm where its output remains unchanged regardless of the batch size or grouping of input data.",
+          "token_agreement": 0.3077,
+          "exact_match": false,
+          "serial_latency_s": 0.5649,
+          "concurrent_latency_s": 0.9353
+        },
+        {
+          "index": 8,
+          "prompt": "Provide two bullet points on memory pressure guardrails.",
+          "serial_output": "- Memory pressure guardrails automatically monitor system memory usage and intervene when resources become critically low, preventing system crashes or performance degradation by prioritizing or terminating non-essential",
+          "concurrent_output": "- Memory pressure guardrails monitor and control system memory usage to prevent out-of-memory (OOM) conditions by automatically terminating non-critical processes or adjusting resource allocation when",
+          "token_agreement": 0.1481,
+          "exact_match": false,
+          "serial_latency_s": 0.6571,
+          "concurrent_latency_s": 0.7661
+        },
+        {
+          "index": 9,
+          "prompt": "Output the word READY and nothing else.",
+          "serial_output": "READY",
+          "concurrent_output": "READY",
+          "token_agreement": 1.0,
+          "exact_match": true,
+          "serial_latency_s": 0.1376,
+          "concurrent_latency_s": 0.3476
+        }
+      ]
+    },
+    {
+      "run_index": 2,
+      "exact_match_rate": 0.3,
+      "token_agreement_rate": 0.6674285714285715,
+      "rows": [
+        {
+          "index": 0,
+          "prompt": "Write one sentence explaining why caching helps inference throughput.",
+          "serial_output": "Caching helps inference throughput by storing previously computed results, allowing subsequent requests to retrieve answers faster without repeating expensive computations.",
+          "concurrent_output": "Caching helps inference throughput by storing previously computed results, allowing subsequent requests to be served faster without redundant computations.",
+          "token_agreement": 0.75,
+          "exact_match": false,
+          "serial_latency_s": 0.554,
+          "concurrent_latency_s": 0.8214
+        },
+        {
+          "index": 1,
+          "prompt": "List three steps to verify an API endpoint is healthy.",
+          "serial_output": "Here are three steps to verify that an API endpoint is healthy:\n\n1. **Send a HTTP GET Request**: Send a simple GET request to the API endpoint using",
+          "concurrent_output": "Here are three steps to verify that an API endpoint is healthy:\n\n1. **Send a HTTP GET Request**: Send a simple GET request to the API endpoint to",
+          "token_agreement": 0.9643,
+          "exact_match": false,
+          "serial_latency_s": 0.7496,
+          "concurrent_latency_s": 0.8904
+        },
+        {
+          "index": 2,
+          "prompt": "What is the capital of France? Answer in one word.",
+          "serial_output": "Paris",
+          "concurrent_output": "Paris",
+          "token_agreement": 1.0,
+          "exact_match": true,
+          "serial_latency_s": 0.1515,
+          "concurrent_latency_s": 0.3026
+        },
+        {
+          "index": 3,
+          "prompt": "Return exactly: ping",
+          "serial_output": "ping",
+          "concurrent_output": "ping",
+          "token_agreement": 1.0,
+          "exact_match": true,
+          "serial_latency_s": 0.1202,
+          "concurrent_latency_s": 0.2335
+        },
+        {
+          "index": 4,
+          "prompt": "Name two risks of running without authentication.",
+          "serial_output": "Two risks of running without authentication are:\n\n1. **Unauthorized Access**: Without authentication, anyone can access the system or application, potentially allowing attackers to view, modify",
+          "concurrent_output": "Two risks of running without authentication are:\n\n1. **Unauthorized Access**: Without authentication, anyone can access the system or application, potentially leading to data breaches, misuse",
+          "token_agreement": 0.8,
+          "exact_match": false,
+          "serial_latency_s": 0.6587,
+          "concurrent_latency_s": 0.9279
+        },
+        {
+          "index": 5,
+          "prompt": "Summarize why deterministic decoding matters in testing.",
+          "serial_output": "Deterministic decoding matters in testing because it ensures that the same input always produces the same output, which is essential for reliable and repeatable test results. This consistency",
+          "concurrent_output": "Deterministic decoding matters in testing because it ensures that the same input always produces the same output, enabling reliable and repeatable test results. This predictability allows developers",
+          "token_agreement": 0.6071,
+          "exact_match": false,
+          "serial_latency_s": 0.7153,
+          "concurrent_latency_s": 0.9276
+        },
+        {
+          "index": 6,
+          "prompt": "What does a 503 status code usually indicate?",
+          "serial_output": "A **503 Service Unavailable** status code indicates that the server is temporarily unable to handle the request, usually due to being overloaded or undergoing maintenance.",
+          "concurrent_output": "A **503 Service Unavailable** is an HTTP status code that indicates the server is temporarily unable to handle the request. This usually means:\n\n- The",
+          "token_agreement": 0.16,
+          "exact_match": false,
+          "serial_latency_s": 0.6728,
+          "concurrent_latency_s": 0.9432
+        },
+        {
+          "index": 7,
+          "prompt": "Give a one-line definition of batch invariance.",
+          "serial_output": "Batch invariance refers to a property where a model's output remains unchanged under permutations of the input batch elements, ensuring consistent predictions regardless of the order of samples",
+          "concurrent_output": "Batch invariance refers to a property where a system or model's output remains unchanged under transformations that preserve the statistical properties of the data across batches.",
+          "token_agreement": 0.2857,
+          "exact_match": false,
+          "serial_latency_s": 0.6636,
+          "concurrent_latency_s": 0.9431
+        },
+        {
+          "index": 8,
+          "prompt": "Provide two bullet points on memory pressure guardrails.",
+          "serial_output": "- Memory pressure guardrails help prevent system crashes by automatically managing and limiting memory usage when available memory is low, ensuring critical processes remain operational.  \n- These guard",
+          "concurrent_output": "- **Threshold Monitoring**: Memory pressure guardrails continuously monitor system memory usage and trigger protective actions when memory usage exceeds a predefined threshold, helping prevent system crashes or performance",
+          "token_agreement": 0.1071,
+          "exact_match": false,
+          "serial_latency_s": 0.6639,
+          "concurrent_latency_s": 0.7799
+        },
+        {
+          "index": 9,
+          "prompt": "Output the word READY and nothing else.",
+          "serial_output": "READY",
+          "concurrent_output": "READY",
+          "token_agreement": 1.0,
+          "exact_match": true,
+          "serial_latency_s": 0.1378,
+          "concurrent_latency_s": 0.3414
+        }
+      ]
+    },
+    {
+      "run_index": 3,
+      "exact_match_rate": 0.3,
+      "token_agreement_rate": 0.5336157775812949,
+      "rows": [
+        {
+          "index": 0,
+          "prompt": "Write one sentence explaining why caching helps inference throughput.",
+          "serial_output": "Caching helps inference throughput by storing previously computed results, allowing the system to quickly retrieve and reuse them instead of recalculating, which reduces latency and increases the",
+          "concurrent_output": "Caching helps inference throughput by storing previously computed results, allowing the system to reuse them instead of recalculating, thus reducing latency and increasing the number of requests",
+          "token_agreement": 0.4815,
+          "exact_match": false,
+          "serial_latency_s": 0.6735,
+          "concurrent_latency_s": 0.9256
+        },
+        {
+          "index": 1,
+          "prompt": "List three steps to verify an API endpoint is healthy.",
+          "serial_output": "Here are three steps to verify that an API endpoint is healthy:\n\n1. **Send a HTTP GET Request**: Send a basic GET request to the API endpoint using",
+          "concurrent_output": "Here are three steps to verify that an API endpoint is healthy:\n\n1. **Send a HTTP GET Request**: Use a tool like cURL, Postman,",
+          "token_agreement": 0.6786,
+          "exact_match": false,
+          "serial_latency_s": 0.6379,
+          "concurrent_latency_s": 0.9252
+        },
+        {
+          "index": 2,
+          "prompt": "What is the capital of France? Answer in one word.",
+          "serial_output": "Paris",
+          "concurrent_output": "Paris",
+          "token_agreement": 1.0,
+          "exact_match": true,
+          "serial_latency_s": 0.1506,
+          "concurrent_latency_s": 0.2322
+        },
+        {
+          "index": 3,
+          "prompt": "Return exactly: ping",
+          "serial_output": "ping",
+          "concurrent_output": "ping",
+          "token_agreement": 1.0,
+          "exact_match": true,
+          "serial_latency_s": 0.1178,
+          "concurrent_latency_s": 0.2323
+        },
+        {
+          "index": 4,
+          "prompt": "Name two risks of running without authentication.",
+          "serial_output": "Two risks of running without authentication are:\n\n1. **Unauthorized Access**: Without authentication, anyone can access the system or application, potentially allowing attackers to steal data,",
+          "concurrent_output": "Running a system or application without authentication poses several risks. Two significant risks are:\n\n1. **Unauthorized Access**: Without authentication, anyone can access the system or application",
+          "token_agreement": 0.0,
+          "exact_match": false,
+          "serial_latency_s": 0.6313,
+          "concurrent_latency_s": 0.9192
+        },
+        {
+          "index": 5,
+          "prompt": "Summarize why deterministic decoding matters in testing.",
+          "serial_output": "Deterministic decoding matters in testing because it ensures that the same input consistently produces the same output, allowing for predictable and repeatable test results. This consistency enables accurate",
+          "concurrent_output": "Deterministic decoding matters in testing because it ensures that the same input always produces the same output, making test results reproducible and reliable. This consistency allows developers to",
+          "token_agreement": 0.5714,
+          "exact_match": false,
+          "serial_latency_s": 0.6381,
+          "concurrent_latency_s": 0.9189
+        },
+        {
+          "index": 6,
+          "prompt": "What does a 503 status code usually indicate?",
+          "serial_output": "A **503 Service Unavailable** status code indicates that the server is temporarily unable to handle the request. This is typically due to the server being overloaded",
+          "concurrent_output": "A **503 Service Unavailable** is an HTTP status code that indicates the server is temporarily unable to handle the request. This usually means the server is",
+          "token_agreement": 0.1538,
+          "exact_match": false,
+          "serial_latency_s": 0.6451,
+          "concurrent_latency_s": 0.9261
+        },
+        {
+          "index": 7,
+          "prompt": "Give a one-line definition of batch invariance.",
+          "serial_output": "Batch invariance refers to a property of a system or model where its behavior or output remains unchanged regardless of how the input data is grouped into batches.",
+          "concurrent_output": "Batch invariance refers to the property of a system or model where its output remains unchanged under transformations of the input that preserve the batch structure, such as per",
+          "token_agreement": 0.4138,
+          "exact_match": false,
+          "serial_latency_s": 0.638,
+          "concurrent_latency_s": 0.9258
+        },
+        {
+          "index": 8,
+          "prompt": "Provide two bullet points on memory pressure guardrails.",
+          "serial_output": "- Memory pressure guardrails automatically monitor system memory usage and trigger actions\u2014such as reclaiming unused memory or limiting background processes\u2014to prevent system crashes or performance degradation during",
+          "concurrent_output": "- **Resource Limits**: Memory pressure guardrails enforce predefined thresholds for memory usage, automatically triggering actions such as process termination or resource throttling when system memory usage exceeds",
+          "token_agreement": 0.037,
+          "exact_match": false,
+          "serial_latency_s": 0.6351,
+          "concurrent_latency_s": 0.7514
+        },
+        {
+          "index": 9,
+          "prompt": "Output the word READY and nothing else.",
+          "serial_output": "READY",
+          "concurrent_output": "READY",
+          "token_agreement": 1.0,
+          "exact_match": true,
+          "serial_latency_s": 0.1379,
+          "concurrent_latency_s": 0.3404
+        }
+      ]
+    },
+    {
+      "run_index": 4,
+      "exact_match_rate": 0.3,
+      "token_agreement_rate": 0.6585539275539275,
+      "rows": [
+        {
+          "index": 0,
+          "prompt": "Write one sentence explaining why caching helps inference throughput.",
+          "serial_output": "Caching helps inference throughput by storing previously computed results, allowing the system to quickly retrieve them instead of recomputing, thereby reducing latency and increasing the number of",
+          "concurrent_output": "Caching helps inference throughput by storing previously computed results, allowing subsequent requests to retrieve answers quickly without repeating the computation.",
+          "token_agreement": 0.4074,
+          "exact_match": false,
+          "serial_latency_s": 0.6664,
+          "concurrent_latency_s": 0.8319
+        },
+        {
+          "index": 1,
+          "prompt": "List three steps to verify an API endpoint is healthy.",
+          "serial_output": "Here are three steps to verify that an API endpoint is healthy:\n\n1. **Send a GET Request**: Send a simple HTTP GET request to the endpoint to check",
+          "concurrent_output": "Here are three steps to verify that an API endpoint is healthy:\n\n1. **Send a HTTP GET Request**: Send a simple GET request to the API endpoint using",
+          "token_agreement": 0.6786,
+          "exact_match": false,
+          "serial_latency_s": 0.6381,
+          "concurrent_latency_s": 0.8862
+        },
+        {
+          "index": 2,
+          "prompt": "What is the capital of France? Answer in one word.",
+          "serial_output": "Paris",
+          "concurrent_output": "Paris",
+          "token_agreement": 1.0,
+          "exact_match": true,
+          "serial_latency_s": 0.1499,
+          "concurrent_latency_s": 0.2859
+        },
+        {
+          "index": 3,
+          "prompt": "Return exactly: ping",
+          "serial_output": "ping",
+          "concurrent_output": "ping",
+          "token_agreement": 1.0,
+          "exact_match": true,
+          "serial_latency_s": 0.1183,
+          "concurrent_latency_s": 0.2315
+        },
+        {
+          "index": 4,
+          "prompt": "Name two risks of running without authentication.",
+          "serial_output": "Two risks of running without authentication are:\n\n1. **Unauthorized Access**: Without authentication, anyone can access the system or service, potentially allowing attackers to steal data,",
+          "concurrent_output": "Two risks of running without authentication are:\n\n1. **Unauthorized Access**: Without authentication, anyone can access the system or application, potentially leading to data breaches, misuse",
+          "token_agreement": 0.76,
+          "exact_match": false,
+          "serial_latency_s": 0.6289,
+          "concurrent_latency_s": 0.9064
+        },
+        {
+          "index": 5,
+          "prompt": "Summarize why deterministic decoding matters in testing.",
+          "serial_output": "Deterministic decoding matters in testing because it ensures that the same input always produces the same output, enabling reliable and repeatable test results. This consistency allows developers to",
+          "concurrent_output": "Deterministic decoding matters in testing because it ensures that the same input always produces the same output, which is crucial for reliable and repeatable test results. This predict",
+          "token_agreement": 0.6071,
+          "exact_match": false,
+          "serial_latency_s": 0.6436,
+          "concurrent_latency_s": 0.9061
+        },
+        {
+          "index": 6,
+          "prompt": "What does a 503 status code usually indicate?",
+          "serial_output": "A **503 Service Unavailable** status code indicates that the server is temporarily unable to handle the request due to being overloaded or down for maintenance. It",
+          "concurrent_output": "A **503 Service Unavailable** status code indicates that the server is temporarily unable to handle the request, usually due to being overloaded or undergoing maintenance.",
+          "token_agreement": 0.6538,
+          "exact_match": false,
+          "serial_latency_s": 0.652,
+          "concurrent_latency_s": 0.9211
+        },
+        {
+          "index": 7,
+          "prompt": "Give a one-line definition of batch invariance.",
+          "serial_output": "Batch invariance refers to a property of a system or model where its behavior or output remains unchanged under transformations or permutations of the input batches.",
+          "concurrent_output": "Batch invariance refers to the property of a model or algorithm that its output remains unchanged regardless of the batch size or how data is grouped into batches during training",
+          "token_agreement": 0.3,
+          "exact_match": false,
+          "serial_latency_s": 0.6058,
+          "concurrent_latency_s": 0.9213
+        },
+        {
+          "index": 8,
+          "prompt": "Provide two bullet points on memory pressure guardrails.",
+          "serial_output": "- Memory pressure guardrails automatically monitor system memory usage and intervene when thresholds are exceeded, preventing applications from consuming excessive resources and causing system instability.  \n- These guard",
+          "concurrent_output": "- Memory pressure guardrails help prevent system crashes by automatically limiting memory usage when resources are nearing capacity, ensuring critical processes remain stable.  \n- They typically trigger mechanisms",
+          "token_agreement": 0.1786,
+          "exact_match": false,
+          "serial_latency_s": 0.6356,
+          "concurrent_latency_s": 0.7528
+        },
+        {
+          "index": 9,
+          "prompt": "Output the word READY and nothing else.",
+          "serial_output": "READY",
+          "concurrent_output": "READY",
+          "token_agreement": 1.0,
+          "exact_match": true,
+          "serial_latency_s": 0.136,
+          "concurrent_latency_s": 0.3427
+        }
+      ]
+    }
+  ],
+  "timestamp_epoch": 1772065293
+}

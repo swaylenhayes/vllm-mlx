@@ -4,7 +4,7 @@ This page summarizes what the fork changed beyond raw throughput numbers.
 
 Scope date: 2026-02-25  
 Fork: `swaylenhayes/vllm-mlx`  
-Current head for these notes: `c25a85a` (I7 behavior validated on `219cfda`)
+Current head for these notes: `d33283d` (R2C live data captured after harness reliability patch)
 
 ## Why this exists
 
@@ -21,6 +21,25 @@ From local model re-evaluation runs, the fork runtime policy and parser work imp
 | Thinking-heavy models | Large reasoning blocks reduced usable output budget | Reasoning parser improvements and `max_thinking_tokens` control | Better control over visible answer/tool budget |
 | Qwen-family VLMs in MLLM mode | Tool metadata accepted but dropped in MLLM path (`0/9`) | I7 MLLM passthrough (`tools` + `tool_choice`) | Validated `9/9` tool-calling on two VLMs |
 | Repetition-prone prompts | Limited request-level repetition tuning | `frequency_penalty` API support | Client-side tuning now possible |
+
+## R2C batch divergence outcomes (2026-02-25)
+
+Repeated-run protocol (5 runs/model, 95% confidence, `concurrency=2`, `max_tokens=32`) under batched runtime path:
+
+| Model | Token agreement mean | Token agreement 95% CI | Exact match mean | Interpretation |
+|---|---:|---:|---:|---|
+| Qwen3-4B-Instruct-2507-4bit | 97.86% | 97.86%-97.86% | 80.00% | Clears 95% token gate in this profile |
+| ZwZ-8B-VL-MLX-4bit | 68.65% | 65.82%-71.49% | 34.00% | Persistent severe divergence |
+| Qwen3-VL-30B-A3B-Instruct-4bit | 63.85% | 57.20%-70.50% | 32.00% | Persistent severe divergence |
+
+Operational guidance from this dataset:
+
+- Keep default monitor policy:
+  - `--batch-divergence-threshold 0.95`
+  - `--batch-divergence-action warn`
+- For correctness-sensitive VLM production traffic:
+  - use `--batch-divergence-action serialize` (or force simple-engine profile)
+- Treat current VLM batched mode as throughput-optimized with known quality risk unless serialized fallback is active.
 
 ## P1.10 validation outcomes (2026-02-25)
 

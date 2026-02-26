@@ -28,3 +28,34 @@ Method: serial (batch_size=1) vs concurrent (10-way) runs on identical prompts a
 
 - Additional live run on currently loaded model: `mlx-community/Qwen3-VL-4B-Instruct-4bit`
 - Results: exact match `30.00%`, token agreement `47.20%` (`qwen3-vl-4b-instruct-current.{txt,json}`)
+
+---
+
+# Batch Invariance Repeated-Run Protocol (R2C)
+
+Date: 2026-02-25
+
+Method:
+- Harness: `scripts/batch_invariance_harness.py` (repeated-run mode)
+- Serial vs concurrent (`concurrency=2`) deterministic decoding
+- `runs=5`, `confidence=0.95`, `max_tokens=32`
+
+| Model | Token agreement mean | Token agreement 95% CI | Exact match mean | Verdict |
+|---|---:|---:|---:|---|
+| Qwen3-4B-Instruct-2507-4bit | 97.86% | 97.86%-97.86% | 80.00% | Above 95% token gate |
+| ZwZ-8B-VL-MLX-4bit | 68.65% | 65.82%-71.49% | 34.00% | Severe divergence |
+| Qwen3-VL-30B-A3B-Instruct-4bit | 63.85% | 57.20%-70.50% | 32.00% | Severe divergence |
+
+## Outcome
+
+- Text model in this profile clears the 95% token-agreement gate.
+- Both VLM models stay far below 95% with tight confidence bands, indicating persistent batch-composition sensitivity.
+- Recommended policy:
+  - default monitor mode: `--batch-divergence-action warn --batch-divergence-threshold 0.95`
+  - correctness-sensitive VLM runs: `--batch-divergence-action serialize` (or simple-engine profile)
+
+## R2C Artifacts
+
+- `qwen3_4b_r2c.json`
+- `zwz_8b_vl_r2c.json`
+- `qwen3_vl_30b_a3b_r2c.json`
