@@ -30,6 +30,7 @@ vllm-mlx brings native Apple Silicon GPU acceleration to vLLM by integrating:
 - [Quick Start](getting-started/quickstart.md)
 
 ### User Guides
+- [Fork Operator Guide](guides/fork-operator-guide.md)
 - [OpenAI-Compatible Server](guides/server.md)
 - [Python API](guides/python-api.md)
 - [Multimodal (Images & Video)](guides/multimodal.md)

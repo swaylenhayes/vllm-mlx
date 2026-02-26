@@ -80,6 +80,7 @@ Latest integrated upstream maintenance:
 
 ## Detailed references
 
+- Fork operator runbook: [`docs/guides/fork-operator-guide.md`](docs/guides/fork-operator-guide.md)
 - Fork compatibility and reliability detail: [`docs/benchmarks/fork-benefits.md`](docs/benchmarks/fork-benefits.md)
 - Append-only measured change log: [`docs/benchmarks/fork-improvement-log.md`](docs/benchmarks/fork-improvement-log.md)
 - Phase artifacts: `benchmarks/phase-results/`
