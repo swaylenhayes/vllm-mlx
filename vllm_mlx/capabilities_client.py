@@ -83,6 +83,7 @@ def summarize_capabilities(capabilities: CapabilitiesResponse) -> dict[str, Any]
         "default_max_tokens": capabilities.limits.default_max_tokens,
         "default_timeout_seconds": capabilities.limits.default_timeout_seconds,
         "supports_request_diagnostics": capabilities.features.request_diagnostics,
+        "strict_model_id_enforced": capabilities.features.strict_model_id,
         "diagnostics_levels": diagnostics.levels if diagnostics else [],
         "default_diagnostics_level": diagnostics.default_level if diagnostics else None,
         "effective_context_tokens": capabilities.limits.effective_context_tokens,

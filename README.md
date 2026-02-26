@@ -26,6 +26,10 @@ Current fork scope:
 - **Batch-divergence observability**:
   - Repeated-run R2C protocol shipped and published with confidence intervals.
   - Text profile cleared token-agreement gate; tested VLM profiles remained well below threshold in batched mode.
+- **Deterministic profile characterization**:
+  - VB1 measured on Qwen3-4B serving profile: `-2.82%` completion-token throughput vs default in the current 10-prompt snapshot.
+- **Migration interop (Gate G1)**:
+  - Graphiti MCP smoke suite passed on extraction, semantic search, and embeddings path (native `1024`-dim vectors observed).
 - **Upstream sync**:
   - Pulled upstream MLLM serialization fix to exclude `None` fields and avoid null-key template/schema issues.
   - Completed U3-A upstream import pass (`#95`, `#109`, `#105`; `#54` already present in fork paths).
@@ -64,6 +68,22 @@ Recommended runtime policy:
 - Default monitor profile: `--batch-divergence-threshold 0.95 --batch-divergence-action warn`
 - Correctness-sensitive VLM workloads: `--batch-divergence-action serialize` (or simple runtime path)
 
+## Milestone: VB1 Deterministic Profile Snapshot
+
+Workload: 10 prompts, `max_tokens=64`, `concurrency=10` (`/v1/chat/completions`, Qwen3-4B-Instruct-2507-4bit)
+
+| Profile | Total time (s) | Prompts/s | Tokens/s (completion) |
+|---|---:|---:|---:|
+| default (`--runtime-mode auto --cache-strategy auto`) | 6.95 | 1.44 | 92.04 |
+| deterministic (`--deterministic`) | 7.16 | 1.40 | 89.44 |
+
+Delta (deterministic vs default):
+- Prompts/s: `-2.82%`
+- Tokens/s (completion): `-2.82%`
+
+Artifacts:
+- `benchmarks/phase-results/vb1-throughput-2026-02-26/`
+
 ## Milestone: Compatibility and Tool Calling
 
 | Area | Before | Fork outcome |
@@ -72,6 +92,7 @@ Recommended runtime policy:
 | MLLM tool-calling | `0/9` on validated VLMs | `9/9` on validated VLMs after I7 |
 | LiquidAI/WaveCut parsing | Unparsed proprietary tool-call format | Added parser aliases `liquidai` / `liquid` / `lfm` |
 | Decode controls | No OpenAI-style frequency control | Added `frequency_penalty` mapping to repetition penalty |
+| Model ID policy | Request model id passthrough only | Added optional strict enforcement via `--strict-model-id` |
 
 ## Milestone: Upstream Sync
 

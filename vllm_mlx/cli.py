@@ -291,6 +291,7 @@ def serve_command(args):
     server._effective_context_tokens = args.effective_context_tokens
     server._deterministic_mode = False
     server._deterministic_serialize = False
+    server._strict_model_id = args.strict_model_id
 
     # Configure reasoning parser
     if args.reasoning_parser:
@@ -388,6 +389,10 @@ def serve_command(args):
         )
     else:
         print("  Deterministic profile: DISABLED")
+    if args.strict_model_id:
+        print("  Strict model ID: ENABLED")
+    else:
+        print("  Strict model ID: DISABLED")
     if args.effective_context_tokens is not None:
         print(
             "  Effective context contract: "
@@ -1078,6 +1083,14 @@ Examples:
             "Enable reproducibility profile: force simple runtime, "
             "greedy sampling (temperature=0, top_p=1), and serialize tracked "
             "inference routes."
+        ),
+    )
+    serve_parser.add_argument(
+        "--strict-model-id",
+        action="store_true",
+        help=(
+            "Require request model id to exactly match loaded model id for "
+            "chat/completions and Anthropic messages endpoints."
         ),
     )
     serve_parser.add_argument(

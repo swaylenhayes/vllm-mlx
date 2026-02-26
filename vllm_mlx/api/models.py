@@ -343,6 +343,7 @@ class CapabilityFeatures(BaseModel):
     anthropic_messages: bool
     mcp: bool
     request_diagnostics: bool = False
+    strict_model_id: bool = False
 
 
 class CapabilityDiagnostics(BaseModel):

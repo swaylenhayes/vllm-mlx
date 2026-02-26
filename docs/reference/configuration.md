@@ -11,6 +11,7 @@
 | `--max-tokens` | Default max tokens | `32768` |
 | `--effective-context-tokens` | Override effective context contract metadata (tokens) | None |
 | `--deterministic` | Reproducibility profile (simple runtime + greedy sampling + serialized tracked routes) | `false` |
+| `--strict-model-id` | Require request model id to match loaded model id | `false` |
 | `--default-temperature` | Default temperature when not specified in request | None |
 | `--default-top-p` | Default top_p when not specified in request | None |
 

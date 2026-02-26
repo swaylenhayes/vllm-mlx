@@ -4,7 +4,7 @@ This page summarizes what the fork changed beyond raw throughput numbers.
 
 Scope date: 2026-02-26  
 Fork: `swaylenhayes/vllm-mlx`  
-Current head for these notes: `cdae83a` (includes U3-A upstream import closure)
+Current head for these notes: `bbae3db` (includes VB1-VB4 rollout)
 
 ## Why this exists
 
@@ -14,8 +14,10 @@ This document tracks the compatibility and reliability outcomes from those backe
 ## Highlights snapshot
 
 - Throughput (phase benchmark): `+50.25%` token throughput vs upstream baseline.
+- Deterministic profile snapshot (Qwen3-4B): `-2.82%` completion-token throughput vs default profile in the measured 10x64 workload.
 - Thinking-model validation: `6/9 -> 9/9` after P1.10 + follow-up hardening.
 - MLLM tool-calling validation: `0/9 -> 9/9` on two validated VLMs.
+- Migration interop Gate G1: extraction/search/embeddings smoke suite passed; embeddings path validated with native `1024`-dim vectors.
 - R2C repeated-run divergence profile:
   - text model above threshold (`97.86%` token agreement),
   - tested VLM models well below threshold in batched mode.
@@ -49,6 +51,23 @@ Operational guidance from this dataset:
 - For correctness-sensitive VLM production traffic:
   - use `--batch-divergence-action serialize` (or force simple-engine profile)
 - Treat current VLM batched mode as throughput-optimized with known quality risk unless serialized fallback is active.
+
+## VB1 deterministic profile throughput snapshot (2026-02-26)
+
+Measured on local HTTP serving with identical prompt set and request concurrency:
+
+| Profile | Total time (s) | Prompts/s | Tokens/s (completion) |
+|---|---:|---:|---:|
+| default (`--runtime-mode auto --cache-strategy auto`) | `6.95` | `1.44` | `92.04` |
+| deterministic (`--deterministic`) | `7.16` | `1.40` | `89.44` |
+
+Delta (deterministic vs default):
+- Prompts/s: `-2.82%`
+- Tokens/s (completion): `-2.82%`
+
+Measurement notes:
+- Artifact bundle: `benchmarks/phase-results/vb1-throughput-2026-02-26/`
+- Deterministic run reported `prompt_tokens=0` usage in this profile; compare on completion-token throughput for decision-making.
 
 ## Upstream sync impact (2026-02-26)
 
@@ -152,6 +171,9 @@ vllm-mlx serve <model-id> \
 3. Thinking budget controls:
 - CLI: `--max-thinking-tokens`
 - Request field: `max_thinking_tokens`
+4. Strict request model-id policy toggle:
+- CLI: `--strict-model-id`
+- Behavior: when enabled, request model id must match loaded model id for chat/completions and Anthropic messages endpoints
 
 ## Caveat (current status)
 

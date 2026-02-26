@@ -55,6 +55,12 @@ vllm-mlx serve mlx-community/Qwen3-4B-Instruct-2507-4bit \
   --enable-auto-tool-choice --tool-call-parser auto
 ```
 
+If integration clients must send exact model ids (no passthrough aliasing), add:
+
+```bash
+  --strict-model-id
+```
+
 ### Profile D: Deterministic diagnostics (repro runs)
 
 Use this for repeatable bug reproduction and validation; throughput will be lower.

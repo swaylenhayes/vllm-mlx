@@ -36,6 +36,7 @@ def _sample_payload():
             "anthropic_messages": True,
             "mcp": False,
             "request_diagnostics": True,
+            "strict_model_id": True,
         },
         "diagnostics": {
             "enabled": True,
@@ -82,6 +83,7 @@ def test_summarize_capabilities_returns_stable_shape():
     assert summary["supports_multimodal"] is True
     assert summary["supports_tool_calling"] is True
     assert summary["supports_request_diagnostics"] is True
+    assert summary["strict_model_id_enforced"] is True
     assert summary["default_diagnostics_level"] == "basic"
     assert "deep" in summary["diagnostics_levels"]
 

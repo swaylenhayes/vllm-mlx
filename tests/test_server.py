@@ -5,6 +5,7 @@ import platform
 import sys
 
 import pytest
+from fastapi import HTTPException
 
 # Skip all tests if not on Apple Silicon
 pytestmark = pytest.mark.skipif(
@@ -507,6 +508,32 @@ class TestHelperFunctions:
             )
             == "deep"
         )
+
+    def test_enforce_request_model_id_disabled(self, monkeypatch):
+        import vllm_mlx.server as server
+
+        monkeypatch.setattr(server, "_strict_model_id", False)
+        monkeypatch.setattr(server, "_model_name", "loaded-model")
+        server._enforce_request_model_id("any-model")
+
+    def test_enforce_request_model_id_enabled_rejects_mismatch(self, monkeypatch):
+        import vllm_mlx.server as server
+
+        monkeypatch.setattr(server, "_strict_model_id", True)
+        monkeypatch.setattr(server, "_model_name", "loaded-model")
+
+        with pytest.raises(HTTPException) as exc:
+            server._enforce_request_model_id("different-model")
+
+        assert exc.value.status_code == 400
+        assert "loaded-model" in str(exc.value.detail)
+
+    def test_enforce_request_model_id_enabled_allows_exact_match(self, monkeypatch):
+        import vllm_mlx.server as server
+
+        monkeypatch.setattr(server, "_strict_model_id", True)
+        monkeypatch.setattr(server, "_model_name", "loaded-model")
+        server._enforce_request_model_id("loaded-model")
 
     def test_build_response_diagnostics_with_effective_context_override(
         self, monkeypatch
@@ -1357,6 +1384,7 @@ class TestCapabilitiesEndpoint:
         assert result.features.structured_output is True
         assert result.features.anthropic_messages is True
         assert result.features.request_diagnostics is True
+        assert isinstance(result.features.strict_model_id, bool)
         assert result.diagnostics is not None
         assert result.diagnostics.enabled is True
         assert "basic" in result.diagnostics.levels

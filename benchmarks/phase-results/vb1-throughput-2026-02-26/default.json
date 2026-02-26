@@ -1,0 +1,14 @@
+{
+  "total_time_s": 6.9532,
+  "prompts": 10,
+  "prompts_per_second": 1.4382,
+  "total_prompt_tokens": 150,
+  "total_completion_tokens": 640,
+  "total_tokens": 790,
+  "tokens_per_second": 92.0435,
+  "throughput_tok_per_s": 113.6162,
+  "max_tokens": 64,
+  "concurrency": 10,
+  "model": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+  "base_url": "http://127.0.0.1:8000"
+}

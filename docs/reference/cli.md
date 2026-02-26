@@ -37,6 +37,7 @@ vllm-mlx serve <model> [options]
 | `--timeout` | Request timeout in seconds | 300 |
 | `--effective-context-tokens` | Override effective context contract metadata (tokens) | None |
 | `--deterministic` | Reproducibility profile (simple runtime + greedy sampling + serialized tracked routes) | False |
+| `--strict-model-id` | Require request model id to match loaded model id | False |
 | `--continuous-batching` | Enable batching for multi-user | False |
 | `--cache-memory-mb` | Cache memory limit in MB | Auto |
 | `--cache-memory-percent` | Fraction of RAM for cache | 0.20 |

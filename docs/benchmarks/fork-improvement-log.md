@@ -9,6 +9,39 @@ Rules:
 
 ## Entries
 
+### 2026-02-26 - VB1 deterministic profile throughput snapshot (`bbae3db` baseline)
+
+- Change:
+  - Captured first side-by-side serving throughput snapshot for default vs deterministic profiles.
+  - Added reusable HTTP benchmark harness:
+    - `scripts/serve_profile_benchmark.py`
+- Measurement status: benchmarked
+- Measurement setup:
+  - Model: `mlx-community/Qwen3-4B-Instruct-2507-4bit`
+  - Workload:
+    - `10` prompts, `max_tokens=64`, `concurrency=10`
+    - endpoint: `/v1/chat/completions`
+  - Profiles:
+    - default: `vllm-mlx serve ... --runtime-mode auto --cache-strategy auto`
+    - deterministic: `vllm-mlx serve ... --deterministic`
+  - Artifacts:
+    - `benchmarks/phase-results/vb1-throughput-2026-02-26/default.json`
+    - `benchmarks/phase-results/vb1-throughput-2026-02-26/deterministic.json`
+    - `benchmarks/phase-results/vb1-throughput-2026-02-26/summary.md`
+- Result:
+  - Default:
+    - `Prompts/s`: `1.44`
+    - `Tokens/s` (completion): `92.04`
+  - Deterministic:
+    - `Prompts/s`: `1.40`
+    - `Tokens/s` (completion): `89.44`
+  - Delta (deterministic vs default):
+    - `Prompts/s`: `-2.82%`
+    - `Tokens/s` (completion): `-2.82%`
+- Caveats:
+  - Deterministic run response usage reported `prompt_tokens=0` in this profile, so total throughput (`prompt + completion`) is not directly comparable between runs.
+  - Use completion-token `Tokens/s` as the primary comparison metric for this snapshot.
+
 ### 2026-02-26 - U3-A upstream import closure (`11e0bd7`, `2888fbf`, `1830be0`, `cdae83a`)
 
 - Change:

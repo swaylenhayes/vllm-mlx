@@ -61,6 +61,7 @@ vllm-mlx serve mlx-community/Llama-3.2-3B-Instruct-4bit --port 8000 --determinis
 | `--runtime-mode-threshold` | Auto mode threshold for selecting batched mode | 2 |
 | `--effective-context-tokens` | Override effective context contract metadata (tokens) | None |
 | `--deterministic` | Reproducibility profile (simple runtime + greedy sampling + serialized tracked routes) | False |
+| `--strict-model-id` | Require request model id to match loaded model id | False |
 | `--continuous-batching` | Legacy override to force batched runtime mode | False |
 | `--cache-strategy` | Cache strategy policy (`auto`, `memory-aware`, `paged`, `legacy`) | auto |
 | `--use-paged-cache` | Enable paged KV cache | False |
@@ -158,6 +159,7 @@ GET /v1/capabilities
 
 Capabilities now include diagnostics negotiation metadata:
 - `features.request_diagnostics`
+- `features.strict_model_id`
 - `diagnostics.levels` (`basic`, `deep`)
 - `diagnostics.default_level`
 - context contract metadata under `limits.*context_tokens`

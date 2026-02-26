@@ -30,6 +30,7 @@ TRACKED_SERVER_OPTIONS = {
     "--runtime-mode-threshold",
     "--effective-context-tokens",
     "--deterministic",
+    "--strict-model-id",
     "--continuous-batching",
     "--cache-strategy",
     "--use-paged-cache",

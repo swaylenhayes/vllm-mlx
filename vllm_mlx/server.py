@@ -139,6 +139,7 @@ _max_thinking_tokens: int | None = None  # Set via --max-thinking-tokens
 _effective_context_tokens: int | None = None  # Set via --effective-context-tokens
 _deterministic_mode: bool = False  # Set via --deterministic
 _deterministic_serialize: bool = False  # Serialize tracked routes when deterministic
+_strict_model_id: bool = False  # Enforce request model to match loaded model id
 
 _FALLBACK_TEMPERATURE = 0.7
 _FALLBACK_TOP_P = 0.9
@@ -1806,6 +1807,33 @@ def _resolve_requested_diagnostics_level(
     return None
 
 
+def _enforce_request_model_id(request_model: str) -> None:
+    """
+    Optionally enforce request model id to match the currently loaded model.
+
+    This is disabled by default for broad OpenAI-compatible client behavior.
+    Enable with `--strict-model-id` when model attribution consistency is required.
+    """
+    if not _strict_model_id:
+        return
+
+    if _model_name is None:
+        raise HTTPException(
+            status_code=503,
+            detail="No model is loaded; cannot validate request model id.",
+        )
+
+    if request_model != _model_name:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Request model '{request_model}' does not match loaded model "
+                f"'{_model_name}'. Restart without --strict-model-id to allow "
+                "model-id passthrough."
+            ),
+        )
+
+
 def _build_response_diagnostics(
     *,
     prompt_tokens: int,
@@ -2392,6 +2420,7 @@ async def get_capabilities() -> CapabilitiesResponse:
             anthropic_messages=True,
             mcp=_mcp_manager is not None,
             request_diagnostics=True,
+            strict_model_id=_strict_model_id,
         ),
         diagnostics=CapabilityDiagnostics(
             enabled=True,
@@ -2945,6 +2974,7 @@ async def _wait_with_disconnect(
 async def create_completion(request: CompletionRequest, raw_request: Request):
     """Create a text completion."""
     engine = get_engine()
+    _enforce_request_model_id(request.model)
 
     # Handle single prompt or list of prompts
     prompts = request.prompt if isinstance(request.prompt, list) else [request.prompt]
@@ -3078,6 +3108,7 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
     ```
     """
     engine = get_engine()
+    _enforce_request_model_id(request.model)
 
     # --- Detailed request logging ---
     n_msgs = len(request.messages)
@@ -3323,6 +3354,7 @@ async def create_anthropic_message(
     # Parse the raw body to handle Anthropic request format
     body = await request.json()
     anthropic_request = AnthropicRequest(**body)
+    _enforce_request_model_id(anthropic_request.model)
 
     # --- Detailed request logging ---
     n_msgs = len(anthropic_request.messages)
