@@ -58,6 +58,7 @@ class SamplingParams:
     top_k: int = 0  # 0 means disabled
     min_p: float = 0.0
     repetition_penalty: float = 1.0
+    repetition_policy: Optional[str] = None  # safe | strict
     stop: Optional[List[str]] = None
     stop_token_ids: Optional[List[int]] = None
 
@@ -205,6 +206,9 @@ class RequestOutput:
     # Status
     finished: bool = False
     finish_reason: Optional[str] = None
+    stop_reason: Optional[str] = None
+    stop_reason_detail: Optional[str] = None
+    repetition_policy: Optional[str] = None
     # Timing
     prompt_tokens: int = 0
     completion_tokens: int = 0

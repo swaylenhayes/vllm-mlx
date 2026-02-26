@@ -48,6 +48,8 @@ vllm-mlx serve mlx-community/Llama-3.2-3B-Instruct-4bit --port 8000 --determinis
 | `--localhost` | Bind to localhost only; overrides `--host` | False |
 | `--api-key` | API key for authentication | None |
 | `--rate-limit` | Requests per minute per client (0 = disabled) | 0 |
+| `--repetition-policy` | Server repetition detector mode (`safe`, `strict`) | safe |
+| `--trust-requests-when-auth-disabled` | Trust request-level repetition override when auth is off | False |
 | `--memory-warn-threshold` | Memory warn threshold (% of system memory) | 70.0 |
 | `--memory-limit-threshold` | Memory limit threshold (% of system memory) | 85.0 |
 | `--memory-action` | Memory limit action (`warn`, `reduce-context`, `reject-new`) | warn |
@@ -133,6 +135,21 @@ response = client.completions.create(
 backend repetition penalty behavior. You can also send `repetition_penalty`
 directly as an advanced passthrough.
 
+`repetition_policy_override` is supported on both `/v1/chat/completions` and
+`/v1/completions`:
+- `safe`: conservative detector (default; accidental degeneration focus)
+- `strict`: aggressive detector (may stop prompt-directed repetition)
+
+Override acceptance follows server trust policy:
+- requires trusted request context by default
+- can be enabled for auth-disabled local setups with
+  `--trust-requests-when-auth-disabled`
+
+When repetition detector stops generation:
+- `finish_reason` remains `stop` for compatibility
+- additive fields are included: `stop_reason: "repetition_detected"` and
+  `stop_reason_detail` (trigger label)
+
 When `include_diagnostics=true`, responses include an additive `diagnostics`
 object. Use `diagnostics_level` to choose:
 - `basic` (default): context and visual-load summary
@@ -163,6 +180,8 @@ Capabilities now include diagnostics negotiation metadata:
 - `diagnostics.levels` (`basic`, `deep`)
 - `diagnostics.default_level`
 - context contract metadata under `limits.*context_tokens`
+- repetition policy metadata under `policies.repetition.*`
+  (`default_mode`, `supported_modes`, `request_override`)
 
 Returns runtime capabilities for feature negotiation, including enabled modalities, auth/rate-limit status, and default limits.
 

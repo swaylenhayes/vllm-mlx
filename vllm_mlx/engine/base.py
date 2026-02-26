@@ -22,6 +22,8 @@ class GenerationOutput:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     finish_reason: str | None = "stop"
+    stop_reason: str | None = None
+    stop_reason_detail: str | None = None
     # For streaming
     new_text: str = ""
     finished: bool = True

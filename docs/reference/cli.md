@@ -26,6 +26,8 @@ vllm-mlx serve <model> [options]
 | `--host` | Server host | 0.0.0.0 |
 | `--api-key` | API key for authentication | None |
 | `--rate-limit` | Requests per minute per client (0 = disabled) | 0 |
+| `--repetition-policy` | Server repetition detector mode (`safe`, `strict`) | safe |
+| `--trust-requests-when-auth-disabled` | Trust request-level repetition override when auth is off | False |
 | `--memory-warn-threshold` | Memory warn threshold (% of system memory) | 70.0 |
 | `--memory-limit-threshold` | Memory limit threshold (% of system memory) | 85.0 |
 | `--memory-action` | Memory limit action (`warn`, `reduce-context`, `reject-new`) | warn |

@@ -41,7 +41,42 @@ CACHE_CORRUPTION_PATTERNS = [
 ]
 
 
-def _detect_repetition(recent_tokens: list[int], min_repeat: int = 8) -> bool:
+_REPETITION_SAFE_MODE = "safe"
+_REPETITION_STRICT_MODE = "strict"
+_REPETITION_SUPPORTED_MODES = (_REPETITION_SAFE_MODE, _REPETITION_STRICT_MODE)
+
+
+def _normalize_repetition_policy(policy: str | None) -> str:
+    """Normalize repetition policy mode with safe default."""
+    if isinstance(policy, str) and policy in _REPETITION_SUPPORTED_MODES:
+        return policy
+    return _REPETITION_SAFE_MODE
+
+
+def _resolve_repetition_detection_config(
+    policy: str | None,
+) -> tuple[int, tuple[int, ...], int]:
+    """
+    Resolve detector thresholds from policy mode.
+
+    Returns:
+        (min_repeat, pattern_lengths, pattern_repeats)
+    """
+    mode = _normalize_repetition_policy(policy)
+    if mode == _REPETITION_STRICT_MODE:
+        # Aggressive mode: trigger earlier and across longer short-pattern loops.
+        return 4, (2, 3, 4, 5, 6), 4
+    # Conservative mode (default): target accidental degeneration with low false positives.
+    return 8, (2, 3, 4), 6
+
+
+def _detect_repetition_trigger(
+    recent_tokens: list[int],
+    *,
+    min_repeat: int = 8,
+    pattern_lengths: tuple[int, ...] = (2, 3, 4),
+    pattern_repeats: int = 6,
+) -> str | None:
     """Detect degenerate repetition in recent token history.
 
     Args:
@@ -49,25 +84,42 @@ def _detect_repetition(recent_tokens: list[int], min_repeat: int = 8) -> bool:
         min_repeat: Minimum number of identical tokens to trigger detection.
 
     Returns:
-        True if degenerate repetition is detected.
+        Trigger label if repetition is detected, otherwise None.
     """
     if len(recent_tokens) < min_repeat:
-        return False
+        return None
     # Check single-token repetition (e.g., "0 0 0 0 0 0 0 0")
     tail = recent_tokens[-min_repeat:]
     if len(set(tail)) == 1:
-        return True
+        return "single_token_run"
     # Check short sequence repetition (e.g., "ab ab ab ab ab ab")
-    for seq_len in (2, 3, 4):
-        repeats_needed = 6
-        check_len = seq_len * repeats_needed
+    for seq_len in pattern_lengths:
+        check_len = seq_len * pattern_repeats
         if len(recent_tokens) < check_len:
             continue
         tail = recent_tokens[-check_len:]
         pattern = tail[:seq_len]
         if all(tail[i] == pattern[i % seq_len] for i in range(check_len)):
-            return True
-    return False
+            return f"pattern_loop_len_{seq_len}"
+    return None
+
+
+def _detect_repetition(
+    recent_tokens: list[int],
+    min_repeat: int = 8,
+    pattern_lengths: tuple[int, ...] = (2, 3, 4),
+    pattern_repeats: int = 6,
+) -> bool:
+    """Compatibility wrapper returning boolean repetition detection."""
+    return (
+        _detect_repetition_trigger(
+            recent_tokens,
+            min_repeat=min_repeat,
+            pattern_lengths=pattern_lengths,
+            pattern_repeats=pattern_repeats,
+        )
+        is not None
+    )
 
 
 class SchedulingPolicy(Enum):
@@ -137,10 +189,13 @@ class SchedulerConfig:
 
     # Optional MLLM-only prefill-step override (None=use MLLM default)
     mllm_prefill_step_size: Optional[int] = None
+    # Repetition detector policy baseline for batched LLM generation.
+    repetition_policy: str = _REPETITION_SAFE_MODE
 
     def __post_init__(self) -> None:
         if self.mllm_prefill_step_size is not None and self.mllm_prefill_step_size <= 0:
             raise ValueError("mllm_prefill_step_size must be > 0 when provided")
+        self.repetition_policy = _normalize_repetition_policy(self.repetition_policy)
 
 
 @dataclass
@@ -171,6 +226,7 @@ def _install_chunked_prefill(
     pending_abort_ids: Optional[Set[str]] = None,
     uid_to_request_id: Optional[Dict[int, str]] = None,
     requests: Optional[Dict[str, Any]] = None,
+    default_repetition_policy: str = _REPETITION_SAFE_MODE,
 ) -> None:
     """
     Monkey-patch a BatchGenerator instance so that large prefills are
@@ -261,6 +317,8 @@ def _install_chunked_prefill(
             cache_out = None
             num_tok += 1
             batch.num_tokens[e] = num_tok
+            stop_reason = None
+            stop_reason_detail = None
 
             # Track recent tokens for repetition detection
             buf = _repetition_buffers.get(uid)
@@ -272,17 +330,50 @@ def _install_chunked_prefill(
             if len(buf) > 32:
                 del buf[: len(buf) - 32]
 
+            effective_repetition_policy = _normalize_repetition_policy(
+                default_repetition_policy
+            )
+            if requests is not None and uid_to_request_id is not None:
+                request_id = uid_to_request_id.get(uid)
+                request = requests.get(request_id) if request_id else None
+                if request is not None:
+                    sampling_params = getattr(request, "sampling_params", None)
+                    request_policy = getattr(sampling_params, "repetition_policy", None)
+                    if isinstance(request_policy, str) and request_policy:
+                        effective_repetition_policy = _normalize_repetition_policy(
+                            request_policy
+                        )
+            min_repeat, pattern_lengths, pattern_repeats = (
+                _resolve_repetition_detection_config(effective_repetition_policy)
+            )
+            repetition_trigger = _detect_repetition_trigger(
+                buf,
+                min_repeat=min_repeat,
+                pattern_lengths=pattern_lengths,
+                pattern_repeats=pattern_repeats,
+            )
+
             if t in self.stop_tokens:
                 finish_reason = "stop"
                 end_idx.append(e)
             elif num_tok >= max_tok:
                 finish_reason = "length"
                 end_idx.append(e)
-            elif _detect_repetition(buf):
+            elif repetition_trigger is not None:
                 finish_reason = "stop"
+                stop_reason = "repetition_detected"
+                stop_reason_detail = repetition_trigger
                 end_idx.append(e)
                 logger.info(
-                    f"[repetition_detector] uid={uid} stopped after {num_tok} tokens"
+                    "[repetition_detector] uid=%s stopped after %s tokens "
+                    "(mode=%s trigger=%s thresholds=min_repeat:%s pattern_lengths:%s pattern_repeats:%s)",
+                    uid,
+                    num_tok,
+                    effective_repetition_policy,
+                    repetition_trigger,
+                    min_repeat,
+                    pattern_lengths,
+                    pattern_repeats,
                 )
             else:
                 finish_reason = None
@@ -291,9 +382,12 @@ def _install_chunked_prefill(
                 cache_out = batch.extract_cache(e)
                 # Clean up repetition buffer on finish
                 _repetition_buffers.pop(uid, None)
-            responses.append(
-                self.Response(uid, t, logprobs[e], finish_reason, cache_out)
-            )
+            response = self.Response(uid, t, logprobs[e], finish_reason, cache_out)
+            if stop_reason is not None:
+                setattr(response, "stop_reason", stop_reason)
+                setattr(response, "stop_reason_detail", stop_reason_detail)
+                setattr(response, "repetition_policy", effective_repetition_policy)
+            responses.append(response)
 
         if len(end_idx):
             if len(keep_idx) > 0:
@@ -1246,6 +1340,7 @@ class Scheduler:
                 pending_abort_ids=self._pending_abort_ids,
                 uid_to_request_id=self.uid_to_request_id,
                 requests=self.requests,
+                default_repetition_policy=self.config.repetition_policy,
             )
 
         # Install MTP if the model supports it
@@ -1973,6 +2068,9 @@ class Scheduler:
                 prompt_tokens=request.num_prompt_tokens,
                 completion_tokens=request.num_output_tokens,
             )
+            output.stop_reason = getattr(response, "stop_reason", None)
+            output.stop_reason_detail = getattr(response, "stop_reason_detail", None)
+            output.repetition_policy = getattr(response, "repetition_policy", None)
 
             # Check if finished
             if response.finish_reason is not None:

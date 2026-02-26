@@ -136,6 +136,7 @@ class TestChatCompletionRequest:
             temperature=0.5,
             frequency_penalty=0.3,
             repetition_penalty=1.2,
+            repetition_policy_override="strict",
             max_thinking_tokens=128,
             include_diagnostics=True,
             diagnostics_level="deep",
@@ -146,6 +147,7 @@ class TestChatCompletionRequest:
         assert request.temperature == 0.5
         assert request.frequency_penalty == 0.3
         assert request.repetition_penalty == 1.2
+        assert request.repetition_policy_override == "strict"
         assert request.max_thinking_tokens == 128
         assert request.include_diagnostics is True
         assert request.diagnostics_level == "deep"
@@ -190,10 +192,12 @@ class TestCompletionRequest:
             prompt="Once upon a time",
             frequency_penalty=0.5,
             repetition_penalty=1.1,
+            repetition_policy_override="safe",
         )
 
         assert request.frequency_penalty == 0.5
         assert request.repetition_penalty == 1.1
+        assert request.repetition_policy_override == "safe"
 
 
 # =============================================================================
@@ -881,6 +885,50 @@ class TestHelperFunctions:
         assert len(tool_calls) == 1
         assert tool_calls[0].function.name == "search_files"
 
+    def test_repetition_policy_override_denied_for_untrusted_request(self, monkeypatch):
+        import types
+
+        import vllm_mlx.server as server
+
+        monkeypatch.setattr(server, "_api_key", None)
+        monkeypatch.setattr(server, "_trust_requests_when_auth_disabled", False)
+        monkeypatch.setattr(server, "_repetition_policy", "safe")
+        monkeypatch.setattr(server, "_repetition_override_policy", "trusted_only")
+
+        request = types.SimpleNamespace(
+            client=types.SimpleNamespace(host="198.51.100.24")
+        )
+        effective_mode, override_accepted = server._resolve_repetition_policy(
+            requested_override="strict",
+            request=request,
+        )
+
+        assert effective_mode == "safe"
+        assert override_accepted is False
+
+    def test_repetition_policy_override_allowed_when_auth_disabled_and_trusted(
+        self, monkeypatch
+    ):
+        import types
+
+        import vllm_mlx.server as server
+
+        monkeypatch.setattr(server, "_api_key", None)
+        monkeypatch.setattr(server, "_trust_requests_when_auth_disabled", True)
+        monkeypatch.setattr(server, "_repetition_policy", "safe")
+        monkeypatch.setattr(server, "_repetition_override_policy", "trusted_only")
+
+        request = types.SimpleNamespace(
+            client=types.SimpleNamespace(host="198.51.100.24")
+        )
+        effective_mode, override_accepted = server._resolve_repetition_policy(
+            requested_override="strict",
+            request=request,
+        )
+
+        assert effective_mode == "strict"
+        assert override_accepted is True
+
 
 # =============================================================================
 # Security and Reliability Tests (PR #4)
@@ -1392,6 +1440,15 @@ class TestCapabilitiesEndpoint:
         assert result.diagnostics.default_level == "basic"
         assert "authorization" in result.auth.accepted_headers
         assert "x-api-key" in result.auth.accepted_headers
+        assert result.policies is not None
+        assert result.policies.repetition is not None
+        assert result.policies.repetition.default_mode in {"safe", "strict"}
+        assert "safe" in result.policies.repetition.supported_modes
+        assert "strict" in result.policies.repetition.supported_modes
+        assert result.policies.repetition.request_override in {
+            "trusted_only",
+            "disabled",
+        }
 
         assert result.limits.default_max_tokens > 0
         assert result.limits.default_timeout_seconds > 0

@@ -272,6 +272,11 @@ def serve_command(args):
     # Configure server security settings
     server._api_key = args.api_key
     server._default_timeout = args.timeout
+    server._repetition_policy = args.repetition_policy
+    server._repetition_override_policy = "trusted_only"
+    server._trust_requests_when_auth_disabled = (
+        args.trust_requests_when_auth_disabled
+    )
     if args.rate_limit > 0:
         server._rate_limiter = RateLimiter(
             requests_per_minute=args.rate_limit, enabled=True
@@ -331,6 +336,7 @@ def serve_command(args):
     )
 
     bind_host = _resolve_bind_host(args.host, args.localhost)
+    server._bind_host = bind_host
     observed_peak = load_observed_peak_concurrency()
     use_batching, runtime_mode_reason = select_runtime_mode(
         requested_mode=args.runtime_mode,
@@ -367,6 +373,12 @@ def serve_command(args):
         print(f"  Rate limiting: ENABLED ({args.rate_limit} req/min)")
     else:
         print("  Rate limiting: DISABLED - Use --rate-limit to enable")
+    print(
+        "  Repetition policy: "
+        f"default={args.repetition_policy}, "
+        f"override_policy=trusted_only, "
+        f"trust_when_auth_disabled={args.trust_requests_when_auth_disabled}"
+    )
     print(f"  Request timeout: {args.timeout}s")
     print(
         "  Memory guardrails: "
@@ -453,6 +465,7 @@ def serve_command(args):
             max_num_seqs=args.max_num_seqs,
             prefill_batch_size=args.prefill_batch_size,
             completion_batch_size=args.completion_batch_size,
+            repetition_policy=args.repetition_policy,
             enable_prefix_cache=cache_profile.enable_prefix_cache,
             prefix_cache_size=args.prefix_cache_size,
             # Memory-aware cache options
@@ -1171,6 +1184,25 @@ Examples:
         type=int,
         default=0,
         help="Rate limit requests per minute per client (0 = disabled)",
+    )
+    serve_parser.add_argument(
+        "--repetition-policy",
+        type=str,
+        default="safe",
+        choices=["safe", "strict"],
+        help=(
+            "Server default repetition detector mode: safe (accidental degeneration) "
+            "or strict (aggressive repetition clamp)."
+        ),
+    )
+    serve_parser.add_argument(
+        "--trust-requests-when-auth-disabled",
+        action="store_true",
+        default=False,
+        help=(
+            "When --api-key is disabled, treat requests as trusted for "
+            "repetition_policy_override. Defaults to false."
+        ),
     )
     serve_parser.add_argument(
         "--memory-warn-threshold",

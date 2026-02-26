@@ -3,7 +3,11 @@
 Tests for the repetition detector in scheduler.py.
 """
 
-from vllm_mlx.scheduler import _detect_repetition
+from vllm_mlx.scheduler import (
+    _detect_repetition,
+    _detect_repetition_trigger,
+    _resolve_repetition_detection_config,
+)
 
 
 class TestDetectRepetition:
@@ -84,3 +88,35 @@ class TestDetectRepetition:
         degenerate = [0] * 10
         tokens = normal + degenerate
         assert _detect_repetition(tokens) is True
+
+    def test_strict_policy_thresholds_trigger_earlier(self):
+        min_repeat, pattern_lengths, pattern_repeats = _resolve_repetition_detection_config(
+            "strict"
+        )
+        assert min_repeat == 4
+        assert pattern_repeats == 4
+        assert 6 in pattern_lengths
+
+        trigger = _detect_repetition_trigger(
+            [9, 9, 9, 9],
+            min_repeat=min_repeat,
+            pattern_lengths=pattern_lengths,
+            pattern_repeats=pattern_repeats,
+        )
+        assert trigger == "single_token_run"
+
+    def test_safe_policy_avoids_early_trigger(self):
+        min_repeat, pattern_lengths, pattern_repeats = _resolve_repetition_detection_config(
+            "safe"
+        )
+        assert min_repeat == 8
+        assert pattern_repeats == 6
+        assert pattern_lengths == (2, 3, 4)
+
+        trigger = _detect_repetition_trigger(
+            [9, 9, 9, 9],
+            min_repeat=min_repeat,
+            pattern_lengths=pattern_lengths,
+            pattern_repeats=pattern_repeats,
+        )
+        assert trigger is None

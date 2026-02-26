@@ -21,6 +21,8 @@
 |--------|-------------|---------|
 | `--api-key` | API key for authentication | None |
 | `--rate-limit` | Requests per minute per client (0 = disabled) | `0` |
+| `--repetition-policy` | Server repetition detector mode (`safe`, `strict`) | `safe` |
+| `--trust-requests-when-auth-disabled` | Trust request-level repetition override when auth is off | `false` |
 | `--timeout` | Request timeout in seconds | `300` |
 
 ### Batching Options
@@ -106,6 +108,7 @@ Create `mcp.json`:
 | `top_p` | Nucleus sampling | Model default |
 | `stream` | Enable streaming | `true` |
 | `stop` | Stop sequences | None |
+| `repetition_policy_override` | Per-request repetition detector mode (`safe`, `strict`) | Server default |
 | `tools` | Tool definitions | None |
 | `response_format` | Output format (`json_object`, `json_schema`) | None |
 | `include_diagnostics` | Include additive diagnostics payload in response | `false` |

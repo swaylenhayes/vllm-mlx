@@ -44,6 +44,13 @@ def _sample_payload():
             "default_level": "basic",
             "deep_supported": True,
         },
+        "policies": {
+            "repetition": {
+                "default_mode": "safe",
+                "supported_modes": ["safe", "strict"],
+                "request_override": "trusted_only",
+            }
+        },
         "auth": {"api_key_required": False, "accepted_headers": ["authorization"]},
         "rate_limit": {"enabled": False, "requests_per_minute": None},
         "limits": {
@@ -86,6 +93,9 @@ def test_summarize_capabilities_returns_stable_shape():
     assert summary["strict_model_id_enforced"] is True
     assert summary["default_diagnostics_level"] == "basic"
     assert "deep" in summary["diagnostics_levels"]
+    assert summary["repetition_policy_default_mode"] == "safe"
+    assert "strict" in summary["repetition_policy_supported_modes"]
+    assert summary["repetition_policy_request_override"] == "trusted_only"
 
 
 def test_fetch_capabilities_validates_http_and_payload(monkeypatch):

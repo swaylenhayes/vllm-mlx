@@ -40,6 +40,7 @@ The server provides:
 import argparse
 import asyncio
 import contextlib
+import ipaddress
 import importlib.metadata
 import importlib.util
 import json
@@ -75,7 +76,9 @@ from .api.models import (
     CapabilityFeatures,
     CapabilityLimits,
     CapabilityModalities,
+    CapabilityPolicies,
     CapabilityRateLimit,
+    CapabilityRepetitionPolicy,
     ChatCompletionChoice,  # noqa: F401
     ChatCompletionChunk,  # noqa: F401
     ChatCompletionChunkChoice,  # noqa: F401
@@ -140,11 +143,16 @@ _effective_context_tokens: int | None = None  # Set via --effective-context-toke
 _deterministic_mode: bool = False  # Set via --deterministic
 _deterministic_serialize: bool = False  # Serialize tracked routes when deterministic
 _strict_model_id: bool = False  # Enforce request model to match loaded model id
+_bind_host: str = "0.0.0.0"  # Effective bind host used for trust policy checks
+_trust_requests_when_auth_disabled: bool = False
+_repetition_policy: str = "safe"  # safe | strict
+_repetition_override_policy: str = "trusted_only"  # trusted_only | disabled
 
 _FALLBACK_TEMPERATURE = 0.7
 _FALLBACK_TOP_P = 0.9
 _DIAGNOSTICS_DEFAULT_LEVEL = "basic"
 _DIAGNOSTICS_LEVELS = ("basic", "deep")
+_REPETITION_SUPPORTED_MODES = ("safe", "strict")
 
 
 class ConcurrencyTracker:
@@ -385,6 +393,63 @@ class BatchDivergenceState:
             )
 
 
+class RepetitionInterventionState:
+    """Thread-safe counters and snapshots for repetition policy interventions."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._interventions_total: int = 0
+        self._by_mode: dict[str, int] = defaultdict(int)
+        self._by_trigger: dict[str, int] = defaultdict(int)
+        self._tokens_saved_total: int = 0
+        self._override_accepted: int = 0
+        self._override_denied: int = 0
+        self._last_event: dict[str, Any] | None = None
+
+    def record_override(self, *, accepted: bool) -> None:
+        with self._lock:
+            if accepted:
+                self._override_accepted += 1
+            else:
+                self._override_denied += 1
+
+    def record_intervention(
+        self,
+        *,
+        mode: str,
+        trigger: str | None,
+        tokens_saved: int,
+        request_id: str | None,
+        model: str | None,
+    ) -> None:
+        with self._lock:
+            self._interventions_total += 1
+            self._by_mode[mode] += 1
+            trigger_key = trigger or "unknown"
+            self._by_trigger[trigger_key] += 1
+            self._tokens_saved_total += max(0, int(tokens_saved))
+            self._last_event = {
+                "timestamp_epoch": time.time(),
+                "mode": mode,
+                "trigger": trigger_key,
+                "tokens_saved": max(0, int(tokens_saved)),
+                "request_id": request_id,
+                "model": model,
+            }
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "interventions_total": self._interventions_total,
+                "interventions_by_mode": dict(self._by_mode),
+                "interventions_by_trigger": dict(self._by_trigger),
+                "tokens_saved_total": self._tokens_saved_total,
+                "override_accepted": self._override_accepted,
+                "override_denied": self._override_denied,
+                "last_event": dict(self._last_event) if self._last_event else None,
+            }
+
+
 _KNOWN_BUGS_PATH = Path(__file__).resolve().parent / "data" / "known_bugs.yaml"
 _memory_state = MemoryPressureState()
 _memory_monitor_task: asyncio.Task | None = None
@@ -403,6 +468,7 @@ _batch_divergence_probe_distractor_prompt: str = (
     "Give a one-line definition of deterministic decoding."
 )
 _batch_serialize_lock: asyncio.Lock | None = None
+_repetition_state = RepetitionInterventionState()
 
 
 def _resolve_temperature(request_value: float | None) -> float:
@@ -447,6 +513,117 @@ def _resolve_repetition_penalty(
     mapped = 1.0 + frequency_penalty
     # Decoding backends require strictly positive repetition penalty.
     return max(0.01, mapped)
+
+
+def _normalize_repetition_policy(value: str | None) -> str:
+    """Normalize repetition policy mode with safe fallback."""
+    if isinstance(value, str) and value in _REPETITION_SUPPORTED_MODES:
+        return value
+    return "safe"
+
+
+def _is_loopback_host(host: str | None) -> bool:
+    """Return True when bind host is loopback-only."""
+    if not isinstance(host, str):
+        return False
+    normalized = host.strip().lower()
+    if normalized in {"localhost"}:
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_request_client_loopback(request: Request) -> bool:
+    """Return True when request client address is loopback."""
+    client_host = request.client.host if request.client else None
+    if not isinstance(client_host, str):
+        return False
+    try:
+        return ipaddress.ip_address(client_host).is_loopback
+    except ValueError:
+        return client_host.lower() == "localhost"
+
+
+def _is_trusted_request(request: Request) -> bool:
+    """
+    Determine whether request-level policy overrides are trusted.
+
+    Rules:
+    - If auth is enabled, requests on protected routes are trusted.
+    - If auth is disabled + loopback bind, loopback clients are trusted.
+    - If auth is disabled + network bind, requests are untrusted by default unless
+      explicit override trust is enabled.
+    """
+    if _api_key is not None:
+        return True
+
+    if _is_loopback_host(_bind_host):
+        return _is_request_client_loopback(request)
+
+    return _trust_requests_when_auth_disabled
+
+
+def _resolve_repetition_policy(
+    *,
+    requested_override: str | None,
+    request: Request,
+) -> tuple[str, bool]:
+    """
+    Resolve effective repetition policy mode and whether override was accepted.
+
+    Returns:
+        (effective_mode, override_accepted)
+    """
+    default_mode = _normalize_repetition_policy(_repetition_policy)
+    if requested_override is None:
+        return default_mode, False
+
+    requested_mode = _normalize_repetition_policy(requested_override)
+    if _repetition_override_policy == "disabled":
+        _repetition_state.record_override(accepted=False)
+        return default_mode, False
+
+    trusted = _is_trusted_request(request)
+    if trusted:
+        _repetition_state.record_override(accepted=True)
+        return requested_mode, True
+
+    _repetition_state.record_override(accepted=False)
+    return default_mode, False
+
+
+def _record_repetition_intervention(
+    *,
+    output: GenerationOutput,
+    max_tokens: int,
+    request_id: str | None,
+) -> None:
+    """Record telemetry/logging when generation stops due to repetition detector."""
+    if getattr(output, "stop_reason", None) != "repetition_detected":
+        return
+
+    mode = _normalize_repetition_policy(getattr(output, "repetition_policy", None))
+    trigger = getattr(output, "stop_reason_detail", None)
+    completion_tokens = int(getattr(output, "completion_tokens", 0) or 0)
+    tokens_saved = max(0, int(max_tokens or 0) - completion_tokens)
+    _repetition_state.record_intervention(
+        mode=mode,
+        trigger=trigger,
+        tokens_saved=tokens_saved,
+        request_id=request_id,
+        model=_model_name,
+    )
+    logger.info(
+        "[repetition_policy] intervention mode=%s trigger=%s action=stop finish_reason=%s stop_reason=%s request_id=%s tokens_saved=%s",
+        mode,
+        trigger,
+        getattr(output, "finish_reason", None),
+        getattr(output, "stop_reason", None),
+        request_id,
+        tokens_saved,
+    )
 
 
 def _resolve_max_thinking_tokens(request_value: int | None) -> int | None:
@@ -1856,6 +2033,7 @@ def _build_response_diagnostics(
     if diagnostics_level == "deep":
         memory_snapshot = _memory_state.snapshot()
         batch_snapshot = _batch_divergence_state.snapshot()
+        repetition_snapshot = _repetition_state.snapshot()
         runtime_payload = {
             "deterministic_mode": _deterministic_mode,
             "deterministic_serialize": _deterministic_serialize,
@@ -1868,6 +2046,15 @@ def _build_response_diagnostics(
             "batch_divergence_last_token_agreement": batch_snapshot.get(
                 "last_token_agreement"
             ),
+            "repetition_policy_default": _normalize_repetition_policy(_repetition_policy),
+            "repetition_policy_override": _repetition_override_policy,
+            "repetition_interventions_total": repetition_snapshot.get(
+                "interventions_total"
+            ),
+            "repetition_override_accepted": repetition_snapshot.get(
+                "override_accepted"
+            ),
+            "repetition_override_denied": repetition_snapshot.get("override_denied"),
         }
 
     return ResponseDiagnostics(
@@ -2228,6 +2415,26 @@ def _check_batch_invariance_status() -> DiagnosticCheck:
     )
 
 
+def _check_repetition_policy_status() -> DiagnosticCheck:
+    """Expose repetition detector policy telemetry snapshot for operators."""
+    snapshot = _repetition_state.snapshot()
+    mode = _normalize_repetition_policy(_repetition_policy)
+    detail = (
+        f"Repetition policy default={mode}, interventions={snapshot.get('interventions_total', 0)}, "
+        f"override_accepted={snapshot.get('override_accepted', 0)}, "
+        f"override_denied={snapshot.get('override_denied', 0)}."
+    )
+    metadata = {
+        "default_mode": mode,
+        "supported_modes": list(_REPETITION_SUPPORTED_MODES),
+        "request_override": _repetition_override_policy,
+        "trust_requests_when_auth_disabled": _trust_requests_when_auth_disabled,
+        "bind_host": _bind_host,
+        **snapshot,
+    }
+    return DiagnosticCheck(status="pass", detail=detail, metadata=metadata)
+
+
 def _aggregate_diagnostic_status(checks: dict[str, DiagnosticCheck]) -> str:
     """Reduce per-check states to top-level health status."""
     states = {c.status for c in checks.values()}
@@ -2294,6 +2501,7 @@ async def health_diagnostics() -> DiagnosticsHealthResponse:
     checks["memory"] = memory_check
     checks["version"] = _check_version_status()
     checks["batch_invariance"] = _check_batch_invariance_status()
+    checks["repetition_policy"] = _check_repetition_policy_status()
 
     return DiagnosticsHealthResponse(
         status=_aggregate_diagnostic_status(checks),
@@ -2421,6 +2629,13 @@ async def get_capabilities() -> CapabilitiesResponse:
             mcp=_mcp_manager is not None,
             request_diagnostics=True,
             strict_model_id=_strict_model_id,
+        ),
+        policies=CapabilityPolicies(
+            repetition=CapabilityRepetitionPolicy(
+                default_mode=_normalize_repetition_policy(_repetition_policy),
+                supported_modes=list(_REPETITION_SUPPORTED_MODES),
+                request_override=_repetition_override_policy,
+            )
         ),
         diagnostics=CapabilityDiagnostics(
             enabled=True,
@@ -2987,11 +3202,28 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
         f"max_tokens={request.max_tokens} temp={request.temperature} "
         f"prompt_chars={prompt_len} prompt_preview={prompt_preview!r}"
     )
+    effective_repetition_policy, override_accepted = _resolve_repetition_policy(
+        requested_override=request.repetition_policy_override,
+        request=raw_request,
+    )
+    if request.repetition_policy_override and not override_accepted:
+        logger.info(
+            "[repetition_policy] denied request override requested=%s effective=%s client=%s",
+            request.repetition_policy_override,
+            effective_repetition_policy,
+            raw_request.client.host if raw_request.client else "unknown",
+        )
 
     if request.stream:
         return StreamingResponse(
             _disconnect_guard(
-                stream_completion(engine, prompts[0], request),
+                stream_completion(
+                    engine,
+                    prompts[0],
+                    request,
+                    repetition_policy=effective_repetition_policy,
+                    request_id=f"completion-stream-{uuid.uuid4().hex[:8]}",
+                ),
                 raw_request,
             ),
             media_type="text/event-stream",
@@ -3004,6 +3236,7 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
         include_diagnostics=request.include_diagnostics,
         diagnostics_level=request.diagnostics_level,
     )
+    effective_max_tokens = _resolve_effective_max_tokens(request.max_tokens)
     choices = []
     total_completion_tokens = 0
     total_prompt_tokens = 0
@@ -3012,13 +3245,14 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
         output = await _wait_with_disconnect(
             engine.generate(
                 prompt=prompt,
-                max_tokens=_resolve_effective_max_tokens(request.max_tokens),
+                max_tokens=effective_max_tokens,
                 temperature=_resolve_temperature(request.temperature),
                 top_p=_resolve_top_p(request.top_p),
                 repetition_penalty=_resolve_repetition_penalty(
                     request.repetition_penalty,
                     request.frequency_penalty,
                 ),
+                repetition_policy=effective_repetition_policy,
                 stop=request.stop,
             ),
             raw_request,
@@ -3027,11 +3261,18 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
         if output is None:
             return Response(status_code=499)  # Client closed request
 
+        _record_repetition_intervention(
+            output=output,
+            max_tokens=effective_max_tokens,
+            request_id=f"completion-{i}",
+        )
         choices.append(
             CompletionChoice(
                 index=i,
                 text=output.text,
                 finish_reason=output.finish_reason,
+                stop_reason=getattr(output, "stop_reason", None),
+                stop_reason_detail=getattr(output, "stop_reason_detail", None),
             )
         )
         total_completion_tokens += output.completion_tokens
@@ -3109,6 +3350,7 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
     """
     engine = get_engine()
     _enforce_request_model_id(request.model)
+    response_request_id = f"chatreq-{uuid.uuid4().hex[:8]}"
 
     # --- Detailed request logging ---
     n_msgs = len(request.messages)
@@ -3135,6 +3377,17 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
         include_diagnostics=request.include_diagnostics,
         diagnostics_level=request.diagnostics_level,
     )
+    effective_repetition_policy, override_accepted = _resolve_repetition_policy(
+        requested_override=request.repetition_policy_override,
+        request=raw_request,
+    )
+    if request.repetition_policy_override and not override_accepted:
+        logger.info(
+            "[repetition_policy] denied request override requested=%s effective=%s client=%s",
+            request.repetition_policy_override,
+            effective_repetition_policy,
+            raw_request.client.host if raw_request.client else "unknown",
+        )
 
     # For MLLM models, keep original messages with embedded images
     # (MLLM.chat() extracts images from message content internally)
@@ -3170,11 +3423,13 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
             messages = _inject_json_instruction(messages, json_instruction)
 
     # Prepare kwargs
+    effective_max_tokens = _resolve_effective_max_tokens(request.max_tokens)
     chat_kwargs = {
-        "max_tokens": _resolve_effective_max_tokens(request.max_tokens),
+        "max_tokens": effective_max_tokens,
         "temperature": _resolve_temperature(request.temperature),
         "top_p": _resolve_top_p(request.top_p),
         "stop": request.stop,
+        "repetition_policy": effective_repetition_policy,
     }
     repetition_penalty = _resolve_repetition_penalty(
         request.repetition_penalty,
@@ -3202,7 +3457,13 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
     if request.stream:
         return StreamingResponse(
             _disconnect_guard(
-                stream_chat_completion(engine, messages, request, **chat_kwargs),
+                stream_chat_completion(
+                    engine,
+                    messages,
+                    request,
+                    request_id=response_request_id,
+                    **chat_kwargs,
+                ),
                 raw_request,
             ),
             media_type="text/event-stream",
@@ -3219,6 +3480,11 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
     )
     if output is None:
         return Response(status_code=499)  # Client closed request
+    _record_repetition_intervention(
+        output=output,
+        max_tokens=effective_max_tokens,
+        request_id=response_request_id,
+    )
 
     elapsed = time.perf_counter() - start_time
     tokens_per_sec = output.completion_tokens / elapsed if elapsed > 0 else 0
@@ -3282,6 +3548,8 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
                     tool_calls=tool_calls,
                 ),
                 finish_reason=finish_reason,
+                stop_reason=getattr(output, "stop_reason", None),
+                stop_reason_detail=getattr(output, "stop_reason_detail", None),
             )
         ],
         usage=Usage(
@@ -3401,6 +3669,7 @@ async def create_anthropic_message(
         "max_tokens": _resolve_effective_max_tokens(openai_request.max_tokens),
         "temperature": openai_request.temperature,
         "top_p": openai_request.top_p,
+        "repetition_policy": _normalize_repetition_policy(_repetition_policy),
     }
     repetition_penalty = _resolve_repetition_penalty(
         openai_request.repetition_penalty,
@@ -3427,6 +3696,11 @@ async def create_anthropic_message(
     )
     if output is None:
         return Response(status_code=499)  # Client closed request
+    _record_repetition_intervention(
+        output=output,
+        max_tokens=int(chat_kwargs["max_tokens"]),
+        request_id=f"anthropic-{uuid.uuid4().hex[:8]}",
+    )
 
     elapsed = time.perf_counter() - start_time
     tokens_per_sec = output.completion_tokens / elapsed if elapsed > 0 else 0
@@ -3592,6 +3866,7 @@ async def _stream_anthropic_messages(
         "max_tokens": _resolve_effective_max_tokens(openai_request.max_tokens),
         "temperature": openai_request.temperature,
         "top_p": openai_request.top_p,
+        "repetition_policy": _normalize_repetition_policy(_repetition_policy),
     }
     repetition_penalty = _resolve_repetition_penalty(
         openai_request.repetition_penalty,
@@ -3730,18 +4005,23 @@ async def stream_completion(
     engine: BaseEngine,
     prompt: str,
     request: CompletionRequest,
+    *,
+    repetition_policy: str,
+    request_id: str,
 ) -> AsyncIterator[str]:
     """Stream completion response."""
+    effective_max_tokens = _resolve_effective_max_tokens(request.max_tokens)
     repetition_penalty = _resolve_repetition_penalty(
         request.repetition_penalty,
         request.frequency_penalty,
     )
     async for output in engine.stream_generate(
         prompt=prompt,
-        max_tokens=_resolve_effective_max_tokens(request.max_tokens),
+        max_tokens=effective_max_tokens,
         temperature=_resolve_temperature(request.temperature),
         top_p=_resolve_top_p(request.top_p),
         repetition_penalty=repetition_penalty,
+        repetition_policy=repetition_policy,
         stop=request.stop,
     ):
         data = {
@@ -3754,10 +4034,23 @@ async def stream_completion(
                     "index": 0,
                     "text": output.new_text,
                     "finish_reason": output.finish_reason if output.finished else None,
+                    "stop_reason": (
+                        getattr(output, "stop_reason", None) if output.finished else None
+                    ),
+                    "stop_reason_detail": (
+                        getattr(output, "stop_reason_detail", None)
+                        if output.finished
+                        else None
+                    ),
                 }
             ],
         }
         if output.finished:
+            _record_repetition_intervention(
+                output=output,
+                max_tokens=effective_max_tokens,
+                request_id=request_id,
+            )
             data["usage"] = get_usage(output).model_dump()
         yield f"data: {json.dumps(data)}\n\n"
 
@@ -3768,6 +4061,8 @@ async def stream_chat_completion(
     engine: BaseEngine,
     messages: list,
     request: ChatCompletionRequest,
+    *,
+    request_id: str,
     **kwargs,
 ) -> AsyncIterator[str]:
     """Stream chat completion response."""
@@ -3974,6 +4269,14 @@ async def stream_chat_completion(
                         )
                         else (output.finish_reason if output.finished else None)
                     ),
+                    stop_reason=(
+                        getattr(output, "stop_reason", None) if output.finished else None
+                    ),
+                    stop_reason_detail=(
+                        getattr(output, "stop_reason_detail", None)
+                        if output.finished
+                        else None
+                    ),
                 )
             ],
             usage=get_usage(output) if output.finished else None,
@@ -4006,6 +4309,12 @@ async def stream_chat_completion(
             yield f"data: {tool_chunk.model_dump_json()}\n\n"
 
     # Log throughput
+    if last_output is not None:
+        _record_repetition_intervention(
+            output=last_output,
+            max_tokens=int(kwargs.get("max_tokens") or 0),
+            request_id=request_id,
+        )
     elapsed = time.perf_counter() - start_time
     tokens_per_sec = completion_tokens / elapsed if elapsed > 0 else 0
     logger.info(

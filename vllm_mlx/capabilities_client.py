@@ -71,6 +71,11 @@ def fetch_capabilities(
 def summarize_capabilities(capabilities: CapabilitiesResponse) -> dict[str, Any]:
     """Return a stable summary shape for runtime tooling decisions."""
     diagnostics = capabilities.diagnostics
+    repetition_policy = (
+        capabilities.policies.repetition
+        if capabilities.policies and capabilities.policies.repetition
+        else None
+    )
     return {
         "model_loaded": capabilities.model_loaded,
         "model_type": capabilities.model_type,
@@ -87,4 +92,13 @@ def summarize_capabilities(capabilities: CapabilitiesResponse) -> dict[str, Any]
         "diagnostics_levels": diagnostics.levels if diagnostics else [],
         "default_diagnostics_level": diagnostics.default_level if diagnostics else None,
         "effective_context_tokens": capabilities.limits.effective_context_tokens,
+        "repetition_policy_default_mode": (
+            repetition_policy.default_mode if repetition_policy else None
+        ),
+        "repetition_policy_supported_modes": (
+            repetition_policy.supported_modes if repetition_policy else []
+        ),
+        "repetition_policy_request_override": (
+            repetition_policy.request_override if repetition_policy else None
+        ),
     }

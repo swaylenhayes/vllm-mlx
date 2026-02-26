@@ -167,6 +167,8 @@ class ChatCompletionRequest(BaseModel):
     # Optional per-request cap for reasoning tokens when reasoning parser is active.
     # If omitted, server-level --max-thinking-tokens policy applies.
     max_thinking_tokens: int | None = Field(default=None, gt=0)
+    # Trusted-client-only override for repetition detector policy.
+    repetition_policy_override: Literal["safe", "strict"] | None = None
     max_tokens: int | None = None
     stream: bool = False
     stream_options: StreamOptions | None = (
@@ -212,6 +214,8 @@ class ChatCompletionChoice(BaseModel):
     index: int = 0
     message: AssistantMessage
     finish_reason: str | None = "stop"
+    stop_reason: str | None = None
+    stop_reason_detail: str | None = None
 
 
 class Usage(BaseModel):
@@ -264,6 +268,8 @@ class CompletionRequest(BaseModel):
     frequency_penalty: float | None = Field(default=None, ge=-2.0, le=2.0)
     # Native repetition penalty passthrough.
     repetition_penalty: float | None = Field(default=None, gt=0.0)
+    # Trusted-client-only override for repetition detector policy.
+    repetition_policy_override: Literal["safe", "strict"] | None = None
     max_tokens: int | None = None
     stream: bool = False
     stop: list[str] | None = None
@@ -281,6 +287,8 @@ class CompletionChoice(BaseModel):
     index: int = 0
     text: str
     finish_reason: str | None = "stop"
+    stop_reason: str | None = None
+    stop_reason_detail: str | None = None
 
 
 class CompletionResponse(BaseModel):
@@ -346,6 +354,20 @@ class CapabilityFeatures(BaseModel):
     strict_model_id: bool = False
 
 
+class CapabilityRepetitionPolicy(BaseModel):
+    """Repetition detector policy metadata for client behavior negotiation."""
+
+    default_mode: Literal["safe", "strict"] = "safe"
+    supported_modes: list[Literal["safe", "strict"]] = Field(default_factory=list)
+    request_override: Literal["trusted_only", "disabled"] = "trusted_only"
+
+
+class CapabilityPolicies(BaseModel):
+    """Operator policy metadata for additive capability discovery."""
+
+    repetition: CapabilityRepetitionPolicy | None = None
+
+
 class CapabilityDiagnostics(BaseModel):
     """Diagnostics capability metadata for client feature negotiation."""
 
@@ -390,6 +412,7 @@ class CapabilitiesResponse(BaseModel):
     model_type: str | None = None
     modalities: CapabilityModalities
     features: CapabilityFeatures
+    policies: CapabilityPolicies | None = None
     diagnostics: CapabilityDiagnostics | None = None
     auth: CapabilityAuth
     rate_limit: CapabilityRateLimit
@@ -589,6 +612,8 @@ class ChatCompletionChunkChoice(BaseModel):
     index: int = 0
     delta: ChatCompletionChunkDelta
     finish_reason: str | None = None
+    stop_reason: str | None = None
+    stop_reason_detail: str | None = None
 
 
 class ChatCompletionChunk(BaseModel):

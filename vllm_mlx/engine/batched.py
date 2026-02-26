@@ -494,6 +494,7 @@ class BatchedEngine(BaseEngine):
             temperature=temperature,
             top_p=top_p,
             repetition_penalty=kwargs.get("repetition_penalty") or 1.0,
+            repetition_policy=kwargs.get("repetition_policy"),
             stop=stop or [],
         )
 
@@ -509,6 +510,8 @@ class BatchedEngine(BaseEngine):
             prompt_tokens=output.prompt_tokens,
             completion_tokens=output.completion_tokens,
             finish_reason=output.finish_reason,
+            stop_reason=output.stop_reason,
+            stop_reason_detail=output.stop_reason_detail,
         )
 
     async def stream_generate(
@@ -572,6 +575,7 @@ class BatchedEngine(BaseEngine):
             temperature=temperature,
             top_p=top_p,
             repetition_penalty=kwargs.get("repetition_penalty") or 1.0,
+            repetition_policy=kwargs.get("repetition_policy"),
             stop=stop or [],
         )
 
@@ -592,6 +596,8 @@ class BatchedEngine(BaseEngine):
                 completion_tokens=output.completion_tokens,
                 finished=output.finished,
                 finish_reason=output.finish_reason,
+                stop_reason=output.stop_reason,
+                stop_reason_detail=output.stop_reason_detail,
             )
 
     async def chat(

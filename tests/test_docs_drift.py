@@ -17,6 +17,8 @@ TRACKED_SERVER_OPTIONS = {
     "--port",
     "--api-key",
     "--rate-limit",
+    "--repetition-policy",
+    "--trust-requests-when-auth-disabled",
     "--memory-warn-threshold",
     "--memory-limit-threshold",
     "--memory-action",
