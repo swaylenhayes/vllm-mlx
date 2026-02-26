@@ -4,12 +4,21 @@ This page summarizes what the fork changed beyond raw throughput numbers.
 
 Scope date: 2026-02-25  
 Fork: `swaylenhayes/vllm-mlx`  
-Current head for these notes: `d33283d` (R2C live data captured after harness reliability patch)
+Current head for these notes: `f514235` (includes upstream MLLM exclude-none serialization sync)
 
 ## Why this exists
 
 The fork README tracks top-level phase throughput gains (upstream vs P0 vs P1).  
 This document tracks the compatibility and reliability outcomes from those backend changes.
+
+## Highlights snapshot
+
+- Throughput (phase benchmark): `+50.25%` token throughput vs upstream baseline.
+- Thinking-model validation: `6/9 -> 9/9` after P1.10 + follow-up hardening.
+- MLLM tool-calling validation: `0/9 -> 9/9` on two validated VLMs.
+- R2C repeated-run divergence profile:
+  - text model above threshold (`97.86%` token agreement),
+  - tested VLM models well below threshold in batched mode.
 
 ## Compatibility outcomes (re-evaluation summary)
 
@@ -40,6 +49,12 @@ Operational guidance from this dataset:
 - For correctness-sensitive VLM production traffic:
   - use `--batch-divergence-action serialize` (or force simple-engine profile)
 - Treat current VLM batched mode as throughput-optimized with known quality risk unless serialized fallback is active.
+
+## Upstream sync impact (2026-02-26)
+
+Integrated upstream change `#104` (commit `6d55631`, fork commit `f514235`):
+- MLLM message/content-part serialization now excludes `None` fields.
+- Prevents null keys (for example `image_url: null`) from triggering key-presence template logic and strict client schema failures.
 
 ## P1.10 validation outcomes (2026-02-25)
 

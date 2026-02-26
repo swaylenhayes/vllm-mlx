@@ -9,6 +9,25 @@ Rules:
 
 ## Entries
 
+### 2026-02-26 - `f514235` (upstream MLLM null-field serialization fix sync)
+
+- Change:
+  - Cherry-picked upstream `#104` to MLLM paths:
+    - use `exclude_none=True` for Pydantic serialization
+    - apply `None` filtering in fallback dict conversion
+- Measurement status: functional validation
+- Measurement setup:
+  - Targeted MLLM/server regression suite:
+    - `tests/test_mllm.py`
+    - `tests/test_mllm_continuous_batching.py`
+    - `tests/test_server.py`
+    - `tests/test_api_models.py`
+- Result:
+  - `177 passed, 12 deselected`
+  - No regression observed in tested MLLM and API paths.
+- Practical impact:
+  - Prevents null-key artifacts (for example `image_url: null`) that can break key-presence template checks and strict client validation.
+
 ### 2026-02-25 - `d33283d` + R2C live dataset (batch divergence confidence pass)
 
 - Change:

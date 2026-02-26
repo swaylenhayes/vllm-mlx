@@ -17,14 +17,25 @@ Current fork scope:
 - **P0**: API contract and reliability hardening
 - **P1**: runtime mode policy, startup diagnostics, cache policy defaults, and capabilities contract helpers
 
-Benchmark configuration used for phase comparison:
+## Highlights so far
 
+- **Throughput improvement**: P1 shows **+50.25%** token throughput vs upstream baseline (`366.22 -> 550.25 tok/s`).
+- **Tool-calling reliability**:
+  - Thinking-model set improved from **6/9 -> 9/9** after P1.10 + follow-up hardening.
+  - MLLM tool-calling improved from **0/9 -> 9/9** on two validated VLMs.
+- **Batch-divergence observability**:
+  - Repeated-run R2C protocol shipped and published with confidence intervals.
+  - Text profile cleared token-agreement gate; tested VLM profiles remained well below threshold in batched mode.
+- **Upstream sync**:
+  - Pulled upstream MLLM serialization fix to exclude `None` fields and avoid null-key template/schema issues.
+
+## Milestone: P0/P1 Performance
+
+Benchmark configuration:
 - Model: `mlx-community/Qwen3-0.6B-8bit`
 - Command: `vllm-mlx bench ... --max-tokens 64 --max-num-seqs 32 --prefill-batch-size 8 --completion-batch-size 16`
 - Prompts: 10
 - Date: 2026-02-24
-
-Raw results:
 
 | Phase | Commit | Total time (s) | Prompts/s | Tokens/s | Throughput (tok/s) |
 |---|---:|---:|---:|---:|---:|
@@ -32,24 +43,15 @@ Raw results:
 | P0 | `a00ec35` | 1.31 | 7.62 | 487.72 | 541.06 |
 | P1 | `26b143b` | 1.29 | 7.75 | 496.00 | 550.25 |
 
-Delta summary:
-
 | Comparison | Total time | Prompts/s | Tokens/s | Throughput |
 |---|---:|---:|---:|---:|
 | P0 vs upstream | -32.47% | +47.67% | +47.74% | +47.74% |
 | P1 vs upstream | -33.51% | +50.19% | +50.25% | +50.25% |
 | P1 vs P0 | -1.53% | +1.71% | +1.70% | +1.70% |
 
-Detailed benchmark snapshots are stored in `benchmarks/phase-results/`.
+## Milestone: Reliability (R2A/R2B/R2C)
 
-### R2C Batch Invariance (Repeated-Run, Batched Path)
-
-Configuration:
-- Harness: `scripts/batch_invariance_harness.py`
-- Runs: `5`, confidence: `95%`, concurrency: `2`, `max_tokens=32`
-- Runtime mode: `auto` with batched engine active for concurrent pass
-
-Results:
+R2C repeated-run batch divergence results (`runs=5`, `95% CI`, `concurrency=2`, `max_tokens=32`):
 
 | Model | Token agreement (mean, 95% CI) | Exact match (mean) | Verdict |
 |---|---:|---:|---|
@@ -57,152 +59,30 @@ Results:
 | ZwZ-8B-VL-MLX-4bit | `68.65%` (`65.82-71.49`) | `34.00%` | Severe divergence |
 | Qwen3-VL-30B-A3B-Instruct-4bit | `63.85%` (`57.20-70.50`) | `32.00%` | Severe divergence |
 
-Operational recommendation from this sweep:
-- Keep global default monitoring profile as `--batch-divergence-action warn --batch-divergence-threshold 0.95`.
-- For correctness-sensitive VLM workloads, run serialized fallback (`--batch-divergence-action serialize`) or force simple runtime profile.
+Recommended runtime policy:
+- Default monitor profile: `--batch-divergence-threshold 0.95 --batch-divergence-action warn`
+- Correctness-sensitive VLM workloads: `--batch-divergence-action serialize` (or simple runtime path)
 
-### What the fork fixes (compatibility impact)
+## Milestone: Compatibility and Tool Calling
 
-The phase table above covers speed. The fork also changed model usability and runtime behavior.
+| Area | Before | Fork outcome |
+|---|---|---|
+| Thinking-model tool reliability | `6/9` ceiling in validation probes | Reached `9/9` in validated set after P1.10 + hardening |
+| MLLM tool-calling | `0/9` on validated VLMs | `9/9` on validated VLMs after I7 |
+| LiquidAI/WaveCut parsing | Unparsed proprietary tool-call format | Added parser aliases `liquidai` / `liquid` / `lfm` |
+| Decode controls | No OpenAI-style frequency control | Added `frequency_penalty` mapping to repetition penalty |
 
-| Area | Upstream behavior seen in re-eval | Fork behavior | Practical impact |
-|---|---|---|---|
-| Single-user runtime path | Batched path could produce runaway generation on some models | `--runtime-mode auto` selects simple engine for single-user usage | Cleaner EOS/stop behavior for affected models |
-| Thinking-model output | `<think>...</think>` could interfere with downstream parsing | Reasoning parser flow hardened; parser ordering fixed | Cleaner assistant content and better tool extraction |
-| LiquidAI/WaveCut tool calls | LiquidAI format not recognized | Added parser: `liquidai` / `liquid` / `lfm` | Structured `tool_calls` can now be extracted |
-| MLLM tool-calling path | VLM requests could accept `tools` but MLLM path did not inject tool metadata consistently | Added MLLM tool/template passthrough (`tools` + `tool_choice`) in simple and batched chat paths | VLM models can now emit structured `tool_calls` in `--mllm` mode (parser/model-template dependent) |
-| Decode controls | No OpenAI-style frequency control | Added `frequency_penalty` mapping to repetition penalty | API clients can tune repetition behavior consistently |
+## Milestone: Upstream Sync
 
-Serve profile used for local reliability work:
+Latest integrated upstream maintenance:
+- `f514235` (cherry-pick of upstream `6d55631`)
+- MLLM message/content-part serialization now excludes `None` fields (`exclude_none=True`) to prevent null-key template misinterpretation and strict-client schema failures.
 
-```bash
-vllm-mlx serve <model-id> \
-  --localhost \
-  --runtime-mode auto \
-  --cache-strategy auto
-```
+## Detailed references
 
-For thinking models:
-
-```bash
-vllm-mlx serve <model-id> \
-  --localhost --runtime-mode auto --cache-strategy auto \
-  --reasoning-parser qwen3
-```
-
-For LiquidAI/WaveCut tool-calling models:
-
-```bash
-vllm-mlx serve <model-id> \
-  --localhost --runtime-mode auto --cache-strategy auto \
-  --enable-auto-tool-choice --tool-call-parser liquidai
-```
-
-For VLM/MLLM tool-calling models:
-
-```bash
-vllm-mlx serve <vlm-model-id> \
-  --localhost --mllm --runtime-mode auto --cache-strategy auto \
-  --enable-auto-tool-choice --tool-call-parser auto
-```
-
-Validated on this profile:
-- `Qwen3-VL-4B-Instruct-4bit` (Tier C: `9/9`)
-- `ZwZ-8B-VL-4bit` (Tier C: `9/9`, plus image+tool mixed request success)
-
-Latest shipped fork updates for thinking-model tool-calling:
-
-- `9c07636` (P1.10): engine-level forced think exit in `SimpleEngine` LLM path.
-- `05869bc` (I6): tool-call spray mitigation (exact dedupe + high-threshold burst collapse).
-- `219cfda` (I7 implementation): MLLM tool/template passthrough (`tools` + `tool_choice`) in simple and batched paths.
-
-- Preserves `--max-thinking-tokens` and request-level `max_thinking_tokens` controls.
-- Keeps reasoning/tool parser-ordering fixes from `d890ef6`.
-
-Validation snapshot (`d890ef6` -> `9c07636`, thinking-model tool-calling):
-
-| Model | Before `9c07636` | After `9c07636` | Best budget | Quality tier |
-|---|---:|---:|---:|:---:|
-| WaveCut LFM2.5-DWQ-4bit | 6/9 | **9/9** | `64` | `A` |
-| LFM2.5-1.2B-Thinking-8bit | 6/9 | **9/9** | `128` | `A` |
-| Nanbeige4.1-3B-8bit | 6/9 | **9/9** | `256` | `B` |
-
-Key findings from the latest sweep:
-- Optimal thinking budget is model-specific; there is no single universal value.
-- Wrong budget can cause redundant tool-call spray (13-15 calls) even when score is `9/9`.
-- Cleanest observed production behavior in this set: `LFM-Thinking @ 128`.
-- I6 mitigation now active: exact duplicate tool calls are removed, and large same-function bursts are collapsed to the first call.
-
-I6 validation snapshot (`9c07636` -> `219cfda`, tool-call spray focus):
-
-| Model | Budget | Pre-I6 score/calls | Post-I6 score/calls | Outcome |
-|---|---:|---|---|---|
-| WaveCut DWQ | `128` | `3/3`, `13` calls | `3/3`, `7` calls | Exact dedupe confirmed (`13 -> 7`) |
-| WaveCut DWQ | `256` | `0/3`, `0` calls | `3/3`, `2` calls | Large quality gain in latest branch state |
-| LFM-Thinking | `128` | `3/3`, `1` call | `0/3`, `0` calls | Variant run behavior |
-| LFM-Thinking | `256` | untested | `3/3`, `1` call | Clean single-call output |
-| Nanbeige4.1 | `256` | `3/3`, `15` calls | `0/3`, `0` calls | Variant run behavior |
-
-I6 takeaway:
-- Safe to ship: no clear I6-attributable degradation pattern.
-- Spray mitigation is working for exact duplicate bursts.
-- Universal budget `256` across all models is not confirmed; per-model profiling is still required.
-
-I7 validation snapshot (MLLM tool-calling; baseline `0/9` -> post-I7 `9/9`):
-
-| Model | Parser | Pre-I7 | Post-I7 | Calls per probe | Avg latency | finish_reason |
-|---|---|---:|---:|---:|---:|---|
-| Qwen3-VL-4B-Instruct-4bit | `auto` | `0/9` | **`9/9`** | `1` | `0.86s` | `tool_calls` |
-| ZwZ-8B-VL-4bit | `auto` | `0/9` | **`9/9`** | `1` | `1.12s` | `tool_calls` |
-
-Image+tool mixed request validation:
-- Model: `ZwZ-8B-VL-4bit`
-- Input: image + `read_file(path)` schema in one request
-- Output: structured `tool_calls` with `finish_reason=tool_calls` (`1.40s`)
-- Note: tool argument quality remains model-dependent; engine/tool pipeline behavior is validated.
-
-Recommended serve profiles for these models:
-
-```bash
-# WaveCut DWQ (latest validation: best observed at 256)
-vllm-mlx serve WaveCut/LFM2.5-1.2B-Thinking-MLX_4bit_DWQ \
-  --localhost --runtime-mode auto --cache-strategy auto \
-  --enable-auto-tool-choice --tool-call-parser liquidai \
-  --reasoning-parser qwen3 --max-thinking-tokens 256
-
-# LFM-Thinking (latest validation: best observed at 256)
-vllm-mlx serve LiquidAI/LFM2.5-1.2B-Thinking-MLX-8bit \
-  --localhost --runtime-mode auto --cache-strategy auto \
-  --enable-auto-tool-choice --tool-call-parser liquidai \
-  --reasoning-parser qwen3 --max-thinking-tokens 256
-
-# Nanbeige4.1 (still requires repeated-run confirmation at chosen budget)
-vllm-mlx serve mlx-community/Nanbeige4.1-3B-8bit \
-  --localhost --runtime-mode auto --cache-strategy auto \
-  --enable-auto-tool-choice --tool-call-parser auto \
-  --reasoning-parser qwen3 --max-thinking-tokens 256
-```
-
-Current caveat:
-- Engine-level forced think exit applies to `SimpleEngine` LLM path (`--runtime-mode auto`/`simple` when routed there).
-- Other engine paths keep API-layer thinking-budget handling.
-- Spray mitigation reduces burst noise but does not guarantee the selected call is semantically optimal.
-- MLLM tool-calling is validated for two Qwen-family VLMs on `--tool-call-parser auto`; other model families may still require parser/profile tuning.
-- Small-model single-run results can vary; use repeated runs for production budget baselines.
-
-Detailed model compatibility notes and re-evaluation summary:
-- [`docs/benchmarks/fork-benefits.md`](docs/benchmarks/fork-benefits.md)
-
-### Ongoing fork log (template-backed)
-
-For each new measured backend improvement, append an entry to:
-
-- [`docs/benchmarks/fork-improvement-log.md`](docs/benchmarks/fork-improvement-log.md)
-
-The log includes:
-- an append-only history of measured improvements
-- a copy/paste entry template for future updates
-- explicit baseline/result/caveat fields to keep claims reproducible
+- Fork compatibility and reliability detail: [`docs/benchmarks/fork-benefits.md`](docs/benchmarks/fork-benefits.md)
+- Append-only measured change log: [`docs/benchmarks/fork-improvement-log.md`](docs/benchmarks/fork-improvement-log.md)
+- Phase artifacts: `benchmarks/phase-results/`
 
 ## Overview
 
