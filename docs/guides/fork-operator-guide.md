@@ -22,7 +22,7 @@ uv pip install --upgrade git+https://github.com/swaylenhayes/vllm-mlx.git
 
 ### Profile A: Local dev default (safe)
 
-Good for daily local usage and frontend integration.
+Good for daily local usage and local client integration.
 
 ```bash
 vllm-mlx serve mlx-community/Qwen3-4B-Instruct-2507-4bit \
@@ -109,7 +109,7 @@ vllm-mlx serve mlx-community/some-model --localhost --offline
 
 ## 7) Troubleshooting
 
-### Server starts but frontend fails requests
+### Server starts but client requests fail
 
 Check:
 - `GET /v1/capabilities` for expected features/modes.
