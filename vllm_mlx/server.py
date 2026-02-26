@@ -103,6 +103,7 @@ from .api.models import (
     Message,  # noqa: F401
     ModelInfo,  # noqa: F401
     ModelsResponse,
+    ResponseDiagnostics,
     ToolCall,
     Usage,  # noqa: F401
     VideoUrl,  # noqa: F401
@@ -134,6 +135,7 @@ _default_timeout: float = 300.0  # Default request timeout in seconds (5 minutes
 _default_temperature: float | None = None  # Set via --default-temperature
 _default_top_p: float | None = None  # Set via --default-top-p
 _max_thinking_tokens: int | None = None  # Set via --max-thinking-tokens
+_effective_context_tokens: int | None = None  # Set via --effective-context-tokens
 _deterministic_mode: bool = False  # Set via --deterministic
 _deterministic_serialize: bool = False  # Serialize tracked routes when deterministic
 
@@ -1698,6 +1700,121 @@ def _resolve_effective_max_tokens(request_value: int | None) -> int:
     return max(1, int(base * factor))
 
 
+def _coerce_context_limit(value: Any) -> int | None:
+    """Normalize context-limit values and drop clearly invalid sentinels."""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0:
+        return None
+    # Some tokenizers expose very large sentinel values for "unbounded".
+    if parsed > 1_000_000:
+        return None
+    return parsed
+
+
+def _infer_model_context_tokens() -> int | None:
+    """Best-effort model context-token limit from tokenizer metadata."""
+    tokenizer = _get_text_tokenizer()
+    if tokenizer is None:
+        return None
+
+    direct = _coerce_context_limit(getattr(tokenizer, "model_max_length", None))
+    if direct is not None:
+        return direct
+
+    nested = getattr(tokenizer, "tokenizer", None)
+    if nested is not None:
+        nested_limit = _coerce_context_limit(getattr(nested, "model_max_length", None))
+        if nested_limit is not None:
+            return nested_limit
+
+    return None
+
+
+def _resolve_context_contract() -> tuple[int | None, int | None, str | None]:
+    """
+    Resolve max/effective context metadata for API and diagnostics surfaces.
+
+    Returns:
+        (max_context_tokens, effective_context_tokens, source)
+    """
+    max_context_tokens = _infer_model_context_tokens()
+    if _effective_context_tokens is not None:
+        return max_context_tokens, _effective_context_tokens, "operator_override"
+    if max_context_tokens is not None:
+        return max_context_tokens, max_context_tokens, "model_config"
+    return None, None, None
+
+
+def _count_visual_inputs(messages: list[Message]) -> int:
+    """Count image/video items in request messages (best-effort)."""
+    count = 0
+    for msg in messages:
+        content = msg.content if hasattr(msg, "content") else None
+        if not isinstance(content, list):
+            continue
+        for item in content:
+            if hasattr(item, "model_dump"):
+                item = item.model_dump(exclude_none=True)
+            elif hasattr(item, "dict"):
+                item = item.dict()
+            if not isinstance(item, dict):
+                continue
+            item_type = str(item.get("type", "")).lower()
+            if item_type in {"image_url", "video_url", "video"}:
+                count += 1
+    return count
+
+
+def _classify_visual_phase(
+    *,
+    visual_inputs: int,
+    context_utilization_pct: float | None,
+) -> str:
+    """Classify coarse visual-load phase using context utilization when available."""
+    if visual_inputs <= 0 or context_utilization_pct is None:
+        return "unknown"
+    if context_utilization_pct >= 90.0:
+        return "collapse"
+    if context_utilization_pct >= 70.0:
+        return "instability"
+    return "stable"
+
+
+def _build_response_diagnostics(
+    *,
+    prompt_tokens: int,
+    visual_inputs: int,
+    include_diagnostics: bool,
+) -> ResponseDiagnostics | None:
+    """Build optional per-response diagnostics payload (additive contract)."""
+    if not include_diagnostics:
+        return None
+
+    max_context_tokens, effective_context_tokens, source = _resolve_context_contract()
+    context_utilization_pct: float | None = None
+    if effective_context_tokens and effective_context_tokens > 0:
+        context_utilization_pct = round(
+            (float(prompt_tokens) / float(effective_context_tokens)) * 100.0,
+            2,
+        )
+
+    return ResponseDiagnostics(
+        max_context_tokens=max_context_tokens,
+        effective_context_tokens=effective_context_tokens,
+        effective_context_source=source,
+        context_utilization_pct=context_utilization_pct,
+        visual_inputs=visual_inputs,
+        visual_token_estimate=None,
+        visual_phase=_classify_visual_phase(
+            visual_inputs=visual_inputs,
+            context_utilization_pct=context_utilization_pct,
+        ),
+    )
+
+
 def _collect_dtype_strings() -> tuple[str | None, str | None]:
     """Best-effort (loaded_dtype, expected_dtype) extraction from runtime state."""
     candidates: list[Any] = [_engine]
@@ -2204,6 +2321,9 @@ async def get_capabilities() -> CapabilitiesResponse:
     model_loaded = _engine is not None
     model_is_mllm = bool(_engine and _engine.is_mllm)
     model_type = "mllm" if model_is_mllm else ("llm" if model_loaded else None)
+    max_context_tokens, effective_context_tokens, effective_context_source = (
+        _resolve_context_contract()
+    )
 
     audio_available = _module_available("mlx_audio")
     embeddings_available = _module_available("mlx_embeddings")
@@ -2228,6 +2348,7 @@ async def get_capabilities() -> CapabilitiesResponse:
             embeddings=embeddings_available,
             anthropic_messages=True,
             mcp=_mcp_manager is not None,
+            request_diagnostics=True,
         ),
         auth=CapabilityAuth(api_key_required=_api_key is not None),
         rate_limit=CapabilityRateLimit(
@@ -2239,6 +2360,9 @@ async def get_capabilities() -> CapabilitiesResponse:
         limits=CapabilityLimits(
             default_max_tokens=_default_max_tokens,
             default_timeout_seconds=_default_timeout,
+            max_context_tokens=max_context_tokens,
+            effective_context_tokens=effective_context_tokens,
+            effective_context_source=effective_context_source,
         ),
     )
 
@@ -2846,6 +2970,11 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
             completion_tokens=total_completion_tokens,
             total_tokens=total_prompt_tokens + total_completion_tokens,
         ),
+        diagnostics=_build_response_diagnostics(
+            prompt_tokens=total_prompt_tokens,
+            visual_inputs=0,
+            include_diagnostics=request.include_diagnostics,
+        ),
     )
 
 
@@ -2917,6 +3046,7 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
         f"response_format={request.response_format}"
     )
     logger.info(f"[REQUEST] last user message preview: {last_user_preview!r}")
+    visual_input_count = _count_visual_inputs(request.messages)
 
     # For MLLM models, keep original messages with embedded images
     # (MLLM.chat() extracts images from message content internally)
@@ -3070,6 +3200,11 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
             prompt_tokens=output.prompt_tokens,
             completion_tokens=output.completion_tokens,
             total_tokens=output.prompt_tokens + output.completion_tokens,
+        ),
+        diagnostics=_build_response_diagnostics(
+            prompt_tokens=output.prompt_tokens,
+            visual_inputs=visual_input_count,
+            include_diagnostics=request.include_diagnostics,
         ),
     )
 
@@ -3884,6 +4019,15 @@ Examples:
         help="Enable continuous batching for multiple concurrent users",
     )
     parser.add_argument(
+        "--effective-context-tokens",
+        type=int,
+        default=None,
+        help=(
+            "Override effective context limit exposed via /v1/capabilities and "
+            "response diagnostics (default: auto from model metadata when available)."
+        ),
+    )
+    parser.add_argument(
         "--deterministic",
         action="store_true",
         help=(
@@ -4028,6 +4172,7 @@ Examples:
     global _batch_divergence_monitor_enabled, _batch_divergence_interval_seconds
     global _batch_divergence_threshold, _batch_divergence_action
     global _default_temperature, _default_top_p, _max_thinking_tokens
+    global _effective_context_tokens
     global _deterministic_mode, _deterministic_serialize
     _api_key = args.api_key
     _default_timeout = args.timeout
@@ -4044,6 +4189,8 @@ Examples:
         raise ValueError("--batch-divergence-interval must be > 0")
     if args.batch_divergence_threshold <= 0 or args.batch_divergence_threshold > 1:
         raise ValueError("--batch-divergence-threshold must be in (0, 1].")
+    if args.effective_context_tokens is not None and args.effective_context_tokens < 1:
+        raise ValueError("--effective-context-tokens must be >= 1")
     _memory_warn_threshold_pct = args.memory_warn_threshold
     _memory_limit_threshold_pct = args.memory_limit_threshold
     _memory_action = args.memory_action
@@ -4059,6 +4206,7 @@ Examples:
     )
     _default_temperature = args.default_temperature
     _default_top_p = args.default_top_p
+    _effective_context_tokens = args.effective_context_tokens
     _deterministic_mode = bool(args.deterministic)
     _deterministic_serialize = bool(args.deterministic)
     if _deterministic_mode:

@@ -59,6 +59,7 @@ vllm-mlx serve mlx-community/Llama-3.2-3B-Instruct-4bit --port 8000 --determinis
 | `--timeout` | Request timeout in seconds | 300 |
 | `--runtime-mode` | Runtime mode policy (`auto`, `simple`, `batched`) | auto |
 | `--runtime-mode-threshold` | Auto mode threshold for selecting batched mode | 2 |
+| `--effective-context-tokens` | Override effective context contract metadata (tokens) | None |
 | `--deterministic` | Reproducibility profile (simple runtime + greedy sampling + serialized tracked routes) | False |
 | `--continuous-batching` | Legacy override to force batched runtime mode | False |
 | `--cache-strategy` | Cache strategy policy (`auto`, `memory-aware`, `paged`, `legacy`) | auto |
@@ -97,6 +98,7 @@ response = client.chat.completions.create(
     messages=[{"role": "user", "content": "Hello!"}],
     max_tokens=100,
     frequency_penalty=0.2,   # OpenAI-style control
+    include_diagnostics=True,
 )
 
 # Streaming
@@ -128,6 +130,9 @@ response = client.completions.create(
 `frequency_penalty` is supported for OpenAI-compatible requests and mapped to
 backend repetition penalty behavior. You can also send `repetition_penalty`
 directly as an advanced passthrough.
+
+When `include_diagnostics=true`, responses include an additive `diagnostics`
+object with context-utilization and visual-load signals (when inferable).
 
 ### Models
 

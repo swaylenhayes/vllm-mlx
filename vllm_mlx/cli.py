@@ -238,6 +238,9 @@ def serve_command(args):
     if args.runtime_mode_threshold < 1:
         print("Error: --runtime-mode-threshold must be >= 1")
         sys.exit(1)
+    if args.effective_context_tokens is not None and args.effective_context_tokens < 1:
+        print("Error: --effective-context-tokens must be >= 1")
+        sys.exit(1)
     if args.mllm_vision_cache_size < 1:
         print("Error: --mllm-vision-cache-size must be >= 1")
         sys.exit(1)
@@ -285,6 +288,7 @@ def serve_command(args):
     # Configure generation defaults
     server._default_temperature = args.default_temperature
     server._default_top_p = args.default_top_p
+    server._effective_context_tokens = args.effective_context_tokens
     server._deterministic_mode = False
     server._deterministic_serialize = False
 
@@ -384,6 +388,13 @@ def serve_command(args):
         )
     else:
         print("  Deterministic profile: DISABLED")
+    if args.effective_context_tokens is not None:
+        print(
+            "  Effective context contract: "
+            f"operator override={args.effective_context_tokens} tokens"
+        )
+    else:
+        print("  Effective context contract: auto (from model metadata when available)")
     if args.enable_auto_tool_choice:
         print(f"  Tool calling: ENABLED (parser: {args.tool_call_parser})")
     else:
@@ -1050,6 +1061,15 @@ Examples:
         type=int,
         default=2,
         help="Peak concurrency threshold for selecting batched mode when --runtime-mode=auto (default: 2).",
+    )
+    serve_parser.add_argument(
+        "--effective-context-tokens",
+        type=int,
+        default=None,
+        help=(
+            "Override effective context limit exposed via /v1/capabilities and "
+            "response diagnostics (default: auto from model metadata when available)."
+        ),
     )
     serve_parser.add_argument(
         "--deterministic",

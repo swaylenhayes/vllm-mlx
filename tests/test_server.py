@@ -121,6 +121,7 @@ class TestChatCompletionRequest:
             request.temperature is None
         )  # resolved at runtime by _resolve_temperature
         assert request.stream is False  # default
+        assert request.include_diagnostics is False
 
     def test_request_with_options(self):
         """Test request with custom options."""
@@ -134,6 +135,7 @@ class TestChatCompletionRequest:
             frequency_penalty=0.3,
             repetition_penalty=1.2,
             max_thinking_tokens=128,
+            include_diagnostics=True,
             stream=True,
         )
 
@@ -142,6 +144,7 @@ class TestChatCompletionRequest:
         assert request.frequency_penalty == 0.3
         assert request.repetition_penalty == 1.2
         assert request.max_thinking_tokens == 128
+        assert request.include_diagnostics is True
         assert request.stream is True
 
     def test_request_with_video_params(self):
@@ -171,6 +174,7 @@ class TestCompletionRequest:
         assert request.model == "test-model"
         assert request.prompt == "Once upon a time"
         assert request.max_tokens is None  # uses _default_max_tokens when None
+        assert request.include_diagnostics is False
 
     def test_completion_request_with_penalties(self):
         """Test completion request with decode penalty controls."""
@@ -467,6 +471,49 @@ class TestHelperFunctions:
 
         assert server._resolve_temperature(0.9) == 0.0
         assert server._resolve_top_p(0.1) == 1.0
+
+    def test_build_response_diagnostics_disabled(self):
+        import vllm_mlx.server as server
+
+        diagnostics = server._build_response_diagnostics(
+            prompt_tokens=100,
+            visual_inputs=1,
+            include_diagnostics=False,
+        )
+        assert diagnostics is None
+
+    def test_build_response_diagnostics_with_effective_context_override(
+        self, monkeypatch
+    ):
+        import vllm_mlx.server as server
+
+        monkeypatch.setattr(server, "_engine", None)
+        monkeypatch.setattr(server, "_effective_context_tokens", 1000)
+
+        diagnostics = server._build_response_diagnostics(
+            prompt_tokens=500,
+            visual_inputs=2,
+            include_diagnostics=True,
+        )
+        assert diagnostics is not None
+        assert diagnostics.effective_context_tokens == 1000
+        assert diagnostics.effective_context_source == "operator_override"
+        assert diagnostics.context_utilization_pct == 50.0
+        assert diagnostics.visual_phase == "stable"
+
+    def test_build_response_diagnostics_visual_collapse_phase(self, monkeypatch):
+        import vllm_mlx.server as server
+
+        monkeypatch.setattr(server, "_engine", None)
+        monkeypatch.setattr(server, "_effective_context_tokens", 1000)
+
+        diagnostics = server._build_response_diagnostics(
+            prompt_tokens=950,
+            visual_inputs=1,
+            include_diagnostics=True,
+        )
+        assert diagnostics is not None
+        assert diagnostics.visual_phase == "collapse"
 
     @pytest.mark.asyncio
     async def test_middleware_uses_serialize_lock_in_deterministic_mode(
@@ -1263,6 +1310,7 @@ class TestCapabilitiesEndpoint:
         assert result.features.streaming is True
         assert result.features.structured_output is True
         assert result.features.anthropic_messages is True
+        assert result.features.request_diagnostics is True
         assert "authorization" in result.auth.accepted_headers
         assert "x-api-key" in result.auth.accepted_headers
 

@@ -183,6 +183,8 @@ class ChatCompletionRequest(BaseModel):
     video_max_frames: int | None = None
     # Request timeout in seconds (None = use server default)
     timeout: float | None = None
+    # Optional additive diagnostics payload for backend reliability metadata.
+    include_diagnostics: bool = False
 
 
 class AssistantMessage(BaseModel):
@@ -218,6 +220,18 @@ class Usage(BaseModel):
     total_tokens: int = 0
 
 
+class ResponseDiagnostics(BaseModel):
+    """Optional backend diagnostics metadata for compatibility-aware clients."""
+
+    max_context_tokens: int | None = None
+    effective_context_tokens: int | None = None
+    effective_context_source: str | None = None
+    context_utilization_pct: float | None = None
+    visual_inputs: int = 0
+    visual_token_estimate: int | None = None
+    visual_phase: str = "unknown"  # stable | instability | collapse | unknown
+
+
 class ChatCompletionResponse(BaseModel):
     """Response for chat completion."""
 
@@ -227,6 +241,7 @@ class ChatCompletionResponse(BaseModel):
     model: str
     choices: list[ChatCompletionChoice]
     usage: Usage = Field(default_factory=Usage)
+    diagnostics: ResponseDiagnostics | None = None
 
 
 # =============================================================================
@@ -250,6 +265,8 @@ class CompletionRequest(BaseModel):
     stop: list[str] | None = None
     # Request timeout in seconds (None = use server default)
     timeout: float | None = None
+    # Optional additive diagnostics payload for backend reliability metadata.
+    include_diagnostics: bool = False
 
 
 class CompletionChoice(BaseModel):
@@ -269,6 +286,7 @@ class CompletionResponse(BaseModel):
     model: str
     choices: list[CompletionChoice]
     usage: Usage = Field(default_factory=Usage)
+    diagnostics: ResponseDiagnostics | None = None
 
 
 # =============================================================================
@@ -318,6 +336,7 @@ class CapabilityFeatures(BaseModel):
     embeddings: bool
     anthropic_messages: bool
     mcp: bool
+    request_diagnostics: bool = False
 
 
 class CapabilityAuth(BaseModel):
@@ -341,6 +360,9 @@ class CapabilityLimits(BaseModel):
 
     default_max_tokens: int
     default_timeout_seconds: float
+    max_context_tokens: int | None = None
+    effective_context_tokens: int | None = None
+    effective_context_source: str | None = None
 
 
 class CapabilitiesResponse(BaseModel):

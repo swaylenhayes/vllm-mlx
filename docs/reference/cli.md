@@ -35,6 +35,7 @@ vllm-mlx serve <model> [options]
 | `--batch-divergence-threshold` | Minimum token agreement before divergence warning (0-1) | 0.95 |
 | `--batch-divergence-action` | Divergence action (`warn`, `serialize`) | warn |
 | `--timeout` | Request timeout in seconds | 300 |
+| `--effective-context-tokens` | Override effective context contract metadata (tokens) | None |
 | `--deterministic` | Reproducibility profile (simple runtime + greedy sampling + serialized tracked routes) | False |
 | `--continuous-batching` | Enable batching for multi-user | False |
 | `--cache-memory-mb` | Cache memory limit in MB | Auto |

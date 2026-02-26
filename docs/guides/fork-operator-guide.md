@@ -65,6 +65,14 @@ vllm-mlx serve mlx-community/Qwen3-4B-Instruct-2507-4bit \
   --deterministic
 ```
 
+Optional: set a practical effective-context contract for clients:
+
+```bash
+vllm-mlx serve mlx-community/Qwen3-4B-Instruct-2507-4bit \
+  --localhost --port 8000 \
+  --effective-context-tokens 8192
+```
+
 ## 3) Verify server contract quickly
 
 ```bash
@@ -124,6 +132,7 @@ vllm-mlx serve mlx-community/some-model --localhost --offline
 Check:
 - `GET /v1/capabilities` for expected features/modes.
 - auth mismatch (`--api-key` enabled but client missing header).
+- if client uses diagnostics overlays, send `include_diagnostics=true` per request.
 
 ### Model load/download failures
 
