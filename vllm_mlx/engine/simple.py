@@ -489,16 +489,19 @@ class SimpleEngine(BaseEngine):
 
         # Convert tools for template if provided
         template_tools = convert_tools_for_template(tools) if tools else None
-
-        if not self._is_mllm and thinking_budget_tokens:
-            prompt = self._build_llm_prompt(
+        llm_prompt: str | None = None
+        if not self._is_mllm:
+            llm_prompt = self._build_llm_prompt(
                 messages,
                 template_tools,
                 template_tool_choice,
             )
+
+        if not self._is_mllm and thinking_budget_tokens:
+            assert llm_prompt is not None
             final_output: GenerationOutput | None = None
             async for chunk in self._stream_llm_with_forced_think_exit(
-                prompt,
+                llm_prompt,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 top_p=top_p,
@@ -556,9 +559,13 @@ class SimpleEngine(BaseEngine):
                     **kwargs,
                 )
                 text = clean_output_text(output.text)
+                prompt_tokens = getattr(output, "prompt_tokens", 0)
+                if not isinstance(prompt_tokens, int) or prompt_tokens <= 0:
+                    prompt_tokens = self._count_tokens(llm_prompt or "")
                 return GenerationOutput(
                     text=text,
                     tokens=output.tokens,
+                    prompt_tokens=prompt_tokens,
                     completion_tokens=len(output.tokens),
                     finish_reason=output.finish_reason,
                 )

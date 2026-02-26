@@ -421,6 +421,7 @@ class TestSimpleEngineToolChoicePassthrough:
         model = MagicMock()
         model.tokenizer = MagicMock()
         model.tokenizer.apply_chat_template = MagicMock(return_value="prompt")
+        model.tokenizer.encode = MagicMock(return_value=[101, 102, 103, 104])
         model.chat = MagicMock(
             return_value=MagicMock(
                 text="ok",
@@ -445,7 +446,7 @@ class TestSimpleEngineToolChoicePassthrough:
             engine._model = model
             engine._loaded = True
 
-            await engine.chat(
+            result = await engine.chat(
                 messages=[{"role": "user", "content": "Find X"}],
                 tools=tools,
                 tool_choice="required",
@@ -454,3 +455,4 @@ class TestSimpleEngineToolChoicePassthrough:
 
             _, chat_kwargs = model.chat.call_args
             assert "tool_choice" not in chat_kwargs
+            assert result.prompt_tokens == 4
