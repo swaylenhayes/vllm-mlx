@@ -346,6 +346,11 @@ class SimpleEngine(BaseEngine):
         if not self._loaded:
             await self.start()
 
+        # Repetition policy is handled at scheduler/server level and is not
+        # a native generation arg for MLXLanguageModel.generate().
+        if not self._is_mllm:
+            kwargs.pop("repetition_policy", None)
+
         async with self._generation_lock:
             # Run in thread pool to allow asyncio timeout to work
             output = await asyncio.to_thread(
@@ -396,6 +401,11 @@ class SimpleEngine(BaseEngine):
         """
         if not self._loaded:
             await self.start()
+
+        # Repetition policy is handled at scheduler/server level and is not
+        # a native generation arg for MLXLanguageModel.stream_generate().
+        if not self._is_mllm:
+            kwargs.pop("repetition_policy", None)
 
         async with self._generation_lock:
             accumulated_text = ""
@@ -486,6 +496,7 @@ class SimpleEngine(BaseEngine):
         thinking_end_token = kwargs.pop("thinking_end_token", "</think>")
         stop = kwargs.pop("stop", None)
         template_tool_choice = kwargs.pop("tool_choice", None)
+        llm_repetition_policy = kwargs.pop("repetition_policy", None)
 
         # Convert tools for template if provided
         template_tools = convert_tools_for_template(tools) if tools else None
@@ -509,6 +520,7 @@ class SimpleEngine(BaseEngine):
                 thinking_budget_tokens=thinking_budget_tokens,
                 thinking_start_token=thinking_start_token,
                 thinking_end_token=thinking_end_token,
+                repetition_policy=llm_repetition_policy,
                 **kwargs,
             ):
                 final_output = chunk
