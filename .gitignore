@@ -93,5 +93,8 @@ tmp/
 temp/
 *.tmp
 
+# Local scratch benchmark artifacts (not for publishing)
+benchmarks/phase-results/_scratch/
+
 # MLX cache
 .mlx_cache/
