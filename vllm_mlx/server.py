@@ -71,6 +71,7 @@ from .api.models import (
     AssistantMessage,  # noqa: F401
     CapabilitiesResponse,
     CapabilityAuth,
+    CapabilityDiagnostics,
     CapabilityFeatures,
     CapabilityLimits,
     CapabilityModalities,
@@ -141,6 +142,8 @@ _deterministic_serialize: bool = False  # Serialize tracked routes when determin
 
 _FALLBACK_TEMPERATURE = 0.7
 _FALLBACK_TOP_P = 0.9
+_DIAGNOSTICS_DEFAULT_LEVEL = "basic"
+_DIAGNOSTICS_LEVELS = ("basic", "deep")
 
 
 class ConcurrencyTracker:
@@ -1783,14 +1786,34 @@ def _classify_visual_phase(
     return "stable"
 
 
+def _resolve_requested_diagnostics_level(
+    *,
+    include_diagnostics: bool,
+    diagnostics_level: str | None,
+) -> str | None:
+    """
+    Resolve requested diagnostics level from request flags.
+
+    Behavior:
+    - neither include nor level set => diagnostics disabled
+    - include=true without level => basic
+    - diagnostics_level provided => that level (implies diagnostics enabled)
+    """
+    if diagnostics_level is not None:
+        return diagnostics_level
+    if include_diagnostics:
+        return _DIAGNOSTICS_DEFAULT_LEVEL
+    return None
+
+
 def _build_response_diagnostics(
     *,
     prompt_tokens: int,
     visual_inputs: int,
-    include_diagnostics: bool,
+    diagnostics_level: str | None,
 ) -> ResponseDiagnostics | None:
     """Build optional per-response diagnostics payload (additive contract)."""
-    if not include_diagnostics:
+    if diagnostics_level is None:
         return None
 
     max_context_tokens, effective_context_tokens, source = _resolve_context_contract()
@@ -1801,7 +1824,26 @@ def _build_response_diagnostics(
             2,
         )
 
+    runtime_payload: dict[str, Any] | None = None
+    if diagnostics_level == "deep":
+        memory_snapshot = _memory_state.snapshot()
+        batch_snapshot = _batch_divergence_state.snapshot()
+        runtime_payload = {
+            "deterministic_mode": _deterministic_mode,
+            "deterministic_serialize": _deterministic_serialize,
+            "memory_pressure": memory_snapshot.get("pressure"),
+            "memory_utilization_pct": memory_snapshot.get("utilization_pct"),
+            "memory_max_tokens_factor": memory_snapshot.get("max_tokens_factor"),
+            "batch_divergence_status": batch_snapshot.get("status"),
+            "batch_divergence_enabled": batch_snapshot.get("enabled"),
+            "batch_divergence_serialize_active": batch_snapshot.get("serialize_active"),
+            "batch_divergence_last_token_agreement": batch_snapshot.get(
+                "last_token_agreement"
+            ),
+        }
+
     return ResponseDiagnostics(
+        level=diagnostics_level,
         max_context_tokens=max_context_tokens,
         effective_context_tokens=effective_context_tokens,
         effective_context_source=source,
@@ -1812,6 +1854,7 @@ def _build_response_diagnostics(
             visual_inputs=visual_inputs,
             context_utilization_pct=context_utilization_pct,
         ),
+        runtime=runtime_payload,
     )
 
 
@@ -2349,6 +2392,12 @@ async def get_capabilities() -> CapabilitiesResponse:
             anthropic_messages=True,
             mcp=_mcp_manager is not None,
             request_diagnostics=True,
+        ),
+        diagnostics=CapabilityDiagnostics(
+            enabled=True,
+            levels=list(_DIAGNOSTICS_LEVELS),
+            default_level=_DIAGNOSTICS_DEFAULT_LEVEL,
+            deep_supported=True,
         ),
         auth=CapabilityAuth(api_key_required=_api_key is not None),
         rate_limit=CapabilityRateLimit(
@@ -2921,6 +2970,10 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
     # Non-streaming response with timing and timeout
     start_time = time.perf_counter()
     timeout = request.timeout or _default_timeout
+    diagnostics_level = _resolve_requested_diagnostics_level(
+        include_diagnostics=request.include_diagnostics,
+        diagnostics_level=request.diagnostics_level,
+    )
     choices = []
     total_completion_tokens = 0
     total_prompt_tokens = 0
@@ -2973,7 +3026,7 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
         diagnostics=_build_response_diagnostics(
             prompt_tokens=total_prompt_tokens,
             visual_inputs=0,
-            include_diagnostics=request.include_diagnostics,
+            diagnostics_level=diagnostics_level,
         ),
     )
 
@@ -3047,6 +3100,10 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
     )
     logger.info(f"[REQUEST] last user message preview: {last_user_preview!r}")
     visual_input_count = _count_visual_inputs(request.messages)
+    diagnostics_level = _resolve_requested_diagnostics_level(
+        include_diagnostics=request.include_diagnostics,
+        diagnostics_level=request.diagnostics_level,
+    )
 
     # For MLLM models, keep original messages with embedded images
     # (MLLM.chat() extracts images from message content internally)
@@ -3204,7 +3261,7 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
         diagnostics=_build_response_diagnostics(
             prompt_tokens=output.prompt_tokens,
             visual_inputs=visual_input_count,
-            include_diagnostics=request.include_diagnostics,
+            diagnostics_level=diagnostics_level,
         ),
     )
 

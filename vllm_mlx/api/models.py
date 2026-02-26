@@ -11,7 +11,7 @@ These models define the request and response schemas for:
 
 import time
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -185,6 +185,8 @@ class ChatCompletionRequest(BaseModel):
     timeout: float | None = None
     # Optional additive diagnostics payload for backend reliability metadata.
     include_diagnostics: bool = False
+    # Diagnostics detail level when diagnostics are enabled.
+    diagnostics_level: Literal["basic", "deep"] | None = None
 
 
 class AssistantMessage(BaseModel):
@@ -223,6 +225,7 @@ class Usage(BaseModel):
 class ResponseDiagnostics(BaseModel):
     """Optional backend diagnostics metadata for compatibility-aware clients."""
 
+    level: Literal["basic", "deep"] = "basic"
     max_context_tokens: int | None = None
     effective_context_tokens: int | None = None
     effective_context_source: str | None = None
@@ -230,6 +233,7 @@ class ResponseDiagnostics(BaseModel):
     visual_inputs: int = 0
     visual_token_estimate: int | None = None
     visual_phase: str = "unknown"  # stable | instability | collapse | unknown
+    runtime: dict[str, Any] | None = None
 
 
 class ChatCompletionResponse(BaseModel):
@@ -267,6 +271,8 @@ class CompletionRequest(BaseModel):
     timeout: float | None = None
     # Optional additive diagnostics payload for backend reliability metadata.
     include_diagnostics: bool = False
+    # Diagnostics detail level when diagnostics are enabled.
+    diagnostics_level: Literal["basic", "deep"] | None = None
 
 
 class CompletionChoice(BaseModel):
@@ -339,6 +345,15 @@ class CapabilityFeatures(BaseModel):
     request_diagnostics: bool = False
 
 
+class CapabilityDiagnostics(BaseModel):
+    """Diagnostics capability metadata for client feature negotiation."""
+
+    enabled: bool = False
+    levels: list[str] = Field(default_factory=list)
+    default_level: str | None = None
+    deep_supported: bool = False
+
+
 class CapabilityAuth(BaseModel):
     """Authentication behavior exposed to API clients."""
 
@@ -374,6 +389,7 @@ class CapabilitiesResponse(BaseModel):
     model_type: str | None = None
     modalities: CapabilityModalities
     features: CapabilityFeatures
+    diagnostics: CapabilityDiagnostics | None = None
     auth: CapabilityAuth
     rate_limit: CapabilityRateLimit
     limits: CapabilityLimits

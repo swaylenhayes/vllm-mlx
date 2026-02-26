@@ -133,6 +133,7 @@ Check:
 - `GET /v1/capabilities` for expected features/modes.
 - auth mismatch (`--api-key` enabled but client missing header).
 - if client uses diagnostics overlays, send `include_diagnostics=true` per request.
+- for richer telemetry, request `diagnostics_level="deep"` alongside `include_diagnostics=true`.
 
 ### Model load/download failures
 

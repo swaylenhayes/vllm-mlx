@@ -99,6 +99,7 @@ response = client.chat.completions.create(
     max_tokens=100,
     frequency_penalty=0.2,   # OpenAI-style control
     include_diagnostics=True,
+    diagnostics_level="deep",  # optional: "basic" (default) or "deep"
 )
 
 # Streaming
@@ -132,7 +133,9 @@ backend repetition penalty behavior. You can also send `repetition_penalty`
 directly as an advanced passthrough.
 
 When `include_diagnostics=true`, responses include an additive `diagnostics`
-object with context-utilization and visual-load signals (when inferable).
+object. Use `diagnostics_level` to choose:
+- `basic` (default): context and visual-load summary
+- `deep`: basic + runtime reliability state snapshot
 
 ### Models
 
@@ -147,6 +150,12 @@ Returns available models.
 ```bash
 GET /v1/capabilities
 ```
+
+Capabilities now include diagnostics negotiation metadata:
+- `features.request_diagnostics`
+- `diagnostics.levels` (`basic`, `deep`)
+- `diagnostics.default_level`
+- context contract metadata under `limits.*context_tokens`
 
 Returns runtime capabilities for feature negotiation, including enabled modalities, auth/rate-limit status, and default limits.
 

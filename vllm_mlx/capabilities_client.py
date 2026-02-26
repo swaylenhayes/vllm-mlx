@@ -70,6 +70,7 @@ def fetch_capabilities(
 
 def summarize_capabilities(capabilities: CapabilitiesResponse) -> dict[str, Any]:
     """Return a stable summary shape for runtime tooling decisions."""
+    diagnostics = capabilities.diagnostics
     return {
         "model_loaded": capabilities.model_loaded,
         "model_type": capabilities.model_type,
@@ -81,4 +82,8 @@ def summarize_capabilities(capabilities: CapabilitiesResponse) -> dict[str, Any]
         "rate_limit_enabled": capabilities.rate_limit.enabled,
         "default_max_tokens": capabilities.limits.default_max_tokens,
         "default_timeout_seconds": capabilities.limits.default_timeout_seconds,
+        "supports_request_diagnostics": capabilities.features.request_diagnostics,
+        "diagnostics_levels": diagnostics.levels if diagnostics else [],
+        "default_diagnostics_level": diagnostics.default_level if diagnostics else None,
+        "effective_context_tokens": capabilities.limits.effective_context_tokens,
     }

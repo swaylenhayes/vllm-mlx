@@ -122,6 +122,7 @@ class TestChatCompletionRequest:
         )  # resolved at runtime by _resolve_temperature
         assert request.stream is False  # default
         assert request.include_diagnostics is False
+        assert request.diagnostics_level is None
 
     def test_request_with_options(self):
         """Test request with custom options."""
@@ -136,6 +137,7 @@ class TestChatCompletionRequest:
             repetition_penalty=1.2,
             max_thinking_tokens=128,
             include_diagnostics=True,
+            diagnostics_level="deep",
             stream=True,
         )
 
@@ -145,6 +147,7 @@ class TestChatCompletionRequest:
         assert request.repetition_penalty == 1.2
         assert request.max_thinking_tokens == 128
         assert request.include_diagnostics is True
+        assert request.diagnostics_level == "deep"
         assert request.stream is True
 
     def test_request_with_video_params(self):
@@ -175,6 +178,7 @@ class TestCompletionRequest:
         assert request.prompt == "Once upon a time"
         assert request.max_tokens is None  # uses _default_max_tokens when None
         assert request.include_diagnostics is False
+        assert request.diagnostics_level is None
 
     def test_completion_request_with_penalties(self):
         """Test completion request with decode penalty controls."""
@@ -478,9 +482,31 @@ class TestHelperFunctions:
         diagnostics = server._build_response_diagnostics(
             prompt_tokens=100,
             visual_inputs=1,
-            include_diagnostics=False,
+            diagnostics_level=None,
         )
         assert diagnostics is None
+
+    def test_resolve_requested_diagnostics_level(self):
+        import vllm_mlx.server as server
+
+        assert (
+            server._resolve_requested_diagnostics_level(
+                include_diagnostics=False, diagnostics_level=None
+            )
+            is None
+        )
+        assert (
+            server._resolve_requested_diagnostics_level(
+                include_diagnostics=True, diagnostics_level=None
+            )
+            == "basic"
+        )
+        assert (
+            server._resolve_requested_diagnostics_level(
+                include_diagnostics=False, diagnostics_level="deep"
+            )
+            == "deep"
+        )
 
     def test_build_response_diagnostics_with_effective_context_override(
         self, monkeypatch
@@ -493,9 +519,10 @@ class TestHelperFunctions:
         diagnostics = server._build_response_diagnostics(
             prompt_tokens=500,
             visual_inputs=2,
-            include_diagnostics=True,
+            diagnostics_level="basic",
         )
         assert diagnostics is not None
+        assert diagnostics.level == "basic"
         assert diagnostics.effective_context_tokens == 1000
         assert diagnostics.effective_context_source == "operator_override"
         assert diagnostics.context_utilization_pct == 50.0
@@ -510,10 +537,29 @@ class TestHelperFunctions:
         diagnostics = server._build_response_diagnostics(
             prompt_tokens=950,
             visual_inputs=1,
-            include_diagnostics=True,
+            diagnostics_level="basic",
         )
         assert diagnostics is not None
         assert diagnostics.visual_phase == "collapse"
+
+    def test_build_response_diagnostics_deep_includes_runtime(self, monkeypatch):
+        import vllm_mlx.server as server
+
+        monkeypatch.setattr(server, "_engine", None)
+        monkeypatch.setattr(server, "_effective_context_tokens", 1000)
+        monkeypatch.setattr(server, "_deterministic_mode", True)
+        monkeypatch.setattr(server, "_deterministic_serialize", True)
+
+        diagnostics = server._build_response_diagnostics(
+            prompt_tokens=250,
+            visual_inputs=1,
+            diagnostics_level="deep",
+        )
+        assert diagnostics is not None
+        assert diagnostics.level == "deep"
+        assert diagnostics.runtime is not None
+        assert diagnostics.runtime["deterministic_mode"] is True
+        assert diagnostics.runtime["deterministic_serialize"] is True
 
     @pytest.mark.asyncio
     async def test_middleware_uses_serialize_lock_in_deterministic_mode(
@@ -1311,6 +1357,11 @@ class TestCapabilitiesEndpoint:
         assert result.features.structured_output is True
         assert result.features.anthropic_messages is True
         assert result.features.request_diagnostics is True
+        assert result.diagnostics is not None
+        assert result.diagnostics.enabled is True
+        assert "basic" in result.diagnostics.levels
+        assert "deep" in result.diagnostics.levels
+        assert result.diagnostics.default_level == "basic"
         assert "authorization" in result.auth.accepted_headers
         assert "x-api-key" in result.auth.accepted_headers
 

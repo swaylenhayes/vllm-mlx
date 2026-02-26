@@ -35,10 +35,21 @@ def _sample_payload():
             "embeddings": True,
             "anthropic_messages": True,
             "mcp": False,
+            "request_diagnostics": True,
+        },
+        "diagnostics": {
+            "enabled": True,
+            "levels": ["basic", "deep"],
+            "default_level": "basic",
+            "deep_supported": True,
         },
         "auth": {"api_key_required": False, "accepted_headers": ["authorization"]},
         "rate_limit": {"enabled": False, "requests_per_minute": None},
-        "limits": {"default_max_tokens": 32768, "default_timeout_seconds": 300.0},
+        "limits": {
+            "default_max_tokens": 32768,
+            "default_timeout_seconds": 300.0,
+            "effective_context_tokens": 8192,
+        },
     }
 
 
@@ -70,6 +81,9 @@ def test_summarize_capabilities_returns_stable_shape():
     assert summary["model_loaded"] is True
     assert summary["supports_multimodal"] is True
     assert summary["supports_tool_calling"] is True
+    assert summary["supports_request_diagnostics"] is True
+    assert summary["default_diagnostics_level"] == "basic"
+    assert "deep" in summary["diagnostics_levels"]
 
 
 def test_fetch_capabilities_validates_http_and_payload(monkeypatch):

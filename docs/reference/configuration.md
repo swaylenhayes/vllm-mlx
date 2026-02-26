@@ -107,6 +107,8 @@ Create `mcp.json`:
 | `stop` | Stop sequences | None |
 | `tools` | Tool definitions | None |
 | `response_format` | Output format (`json_object`, `json_schema`) | None |
+| `include_diagnostics` | Include additive diagnostics payload in response | `false` |
+| `diagnostics_level` | Diagnostics detail level (`basic`, `deep`) | `basic` (when diagnostics enabled) |
 
 ### Multimodal Options
 
