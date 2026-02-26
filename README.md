@@ -84,6 +84,9 @@ Latest integrated upstream maintenance:
 - Append-only measured change log: [`docs/benchmarks/fork-improvement-log.md`](docs/benchmarks/fork-improvement-log.md)
 - Phase artifacts: `benchmarks/phase-results/`
 
+> [!NOTE]
+> End of fork-specific summary. Sections below this point are from the upstream project overview and may not reflect fork-specific deltas documented above.
+
 ## Overview
 
 vllm-mlx brings native Apple Silicon GPU acceleration to vLLM by integrating:
