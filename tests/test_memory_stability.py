@@ -129,15 +129,16 @@ class TestClearCacheInterval:
 
     @patch("vllm_mlx.scheduler.mx")
     def test_clear_cache_called_periodically(self, mock_mx):
-        """Verify mx.clear_cache() is called every _clear_cache_interval steps."""
+        """Verify periodic mx.clear_cache() still occurs with adaptive interval."""
         scheduler = _make_scheduler()
         scheduler._clear_cache_interval = 4  # Small interval for testing
 
-        # Simulate steps without actual generation (no running requests)
-        for _i in range(8):
+        # Adaptive logic currently enforces a minimum effective interval of 8
+        # when there is no concurrent load. Run enough steps to hit two periods.
+        for _i in range(16):
             scheduler.step()
 
-        # Should have been called at step 4 and 8
+        # Should be called at least twice (step 8 and 16 under idle load).
         assert mock_mx.clear_cache.call_count >= 2
 
     @patch("vllm_mlx.scheduler.mx")
