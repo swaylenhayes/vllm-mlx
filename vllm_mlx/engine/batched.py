@@ -222,11 +222,15 @@ class BatchedEngine(BaseEngine):
             self._scheduler_config, "enable_vision_cache", True
         )
         vision_cache_size = getattr(self._scheduler_config, "vision_cache_size", 100)
+        mllm_prefill_step_size = getattr(
+            self._scheduler_config, "mllm_prefill_step_size", None
+        )
 
         mllm_config = MLLMSchedulerConfig(
             max_num_seqs=max_num_seqs,
             prefill_batch_size=prefill_batch_size,
             completion_batch_size=completion_batch_size,
+            prefill_step_size=mllm_prefill_step_size or 1024,
             enable_vision_cache=enable_vision_cache,
             vision_cache_size=vision_cache_size,
         )
