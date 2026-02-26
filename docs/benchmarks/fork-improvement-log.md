@@ -9,6 +9,52 @@ Rules:
 
 ## Entries
 
+### 2026-02-26 - U3-A upstream import closure (`11e0bd7`, `2888fbf`, `1830be0`, `cdae83a`)
+
+- Change:
+  - Completed U3-A upstream import pass on fork branch:
+    - `#95` tool-call argument schema coercion hardening (`11e0bd7`)
+    - `#109` UTF-8-safe incremental streaming detokenizer integration (`2888fbf`)
+    - `#105` MLLM prefill-step CLI clarity/validation (`1830be0`)
+  - Added fork follow-on patch:
+    - `cdae83a` wires MLLM prefill-step override into batched-engine startup.
+  - Evaluated `#54` as already present in fork behavior (empty cherry-pick after reconciliation).
+- Measurement status: functional/regression validation
+- Measurement setup:
+  - Coercion closure suite:
+    - targeted coercion tests in `tests/test_server.py`
+    - full repo suite (`.venv/bin/python -m pytest -q`)
+  - UTF-8 detokenizer suite:
+    - `tests/test_streaming_detokenizer.py`
+    - `tests/test_batching.py`
+    - `tests/test_batching_deterministic.py`
+    - `tests/test_continuous_batching.py`
+    - `tests/test_mllm_continuous_batching.py`
+    - `tests/test_server.py`
+  - MLLM prefill override suite:
+    - `tests/test_cli_runtime_policies.py`
+    - `tests/test_cli_localhost.py`
+    - `tests/test_docs_drift.py`
+    - `tests/test_mllm_continuous_batching.py`
+    - `tests/test_server.py`
+  - `#54` no-op confirmation suite:
+    - `tests/test_simple_engine.py`
+    - `tests/test_mllm.py`
+    - `tests/test_mllm_continuous_batching.py`
+    - `tests/test_server.py`
+- Result:
+  - `#95` closure:
+    - targeted coercion tests: `3 passed`
+    - full suite: `1031 passed, 5 skipped, 20 deselected`
+  - `#109` suite: `137 passed, 8 deselected`
+  - `#105` suite: `100 passed, 6 deselected`
+  - `#54` confirmation suite: `115 passed, 12 deselected`
+- Practical impact:
+  - Tool-call argument coercion now enforced across parsing/stream fallback paths with test lock-in.
+  - Streaming decode now protects multi-byte UTF-8 boundaries in incremental output.
+  - MLLM prefill-step override is documented, validated, and wired through batched startup.
+  - U3-A import set is closed; next implementation track can pivot to Variant B patch work.
+
 ### 2026-02-26 - `f514235` (upstream MLLM null-field serialization fix sync)
 
 - Change:

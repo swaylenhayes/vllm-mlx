@@ -2,9 +2,9 @@
 
 This page summarizes what the fork changed beyond raw throughput numbers.
 
-Scope date: 2026-02-25  
+Scope date: 2026-02-26  
 Fork: `swaylenhayes/vllm-mlx`  
-Current head for these notes: `f514235` (includes upstream MLLM exclude-none serialization sync)
+Current head for these notes: `cdae83a` (includes U3-A upstream import closure)
 
 ## Why this exists
 
@@ -55,6 +55,18 @@ Operational guidance from this dataset:
 Integrated upstream change `#104` (commit `6d55631`, fork commit `f514235`):
 - MLLM message/content-part serialization now excludes `None` fields.
 - Prevents null keys (for example `image_url: null`) from triggering key-presence template logic and strict client schema failures.
+
+U3-A upstream import closure:
+- `#95` (`11e0bd7`): tool-call argument schema coercion hardening.
+- `#109` (`2888fbf`): UTF-8-safe incremental decode via streaming detokenizer.
+- `#105` (`1830be0`): MLLM prefill override CLI clarity/validation.
+- Fork follow-on (`cdae83a`): wires MLLM prefill override into batched-engine startup.
+- `#54` evaluated as already-present behavior in fork (empty cherry-pick after reconciliation).
+
+Validation summary for U3-A closure:
+- `#95` closure included full venv suite pass (`1031 passed, 5 skipped, 20 deselected`) after targeted coercion tests.
+- `#109` validation suite (`streaming_detokenizer + batching + mllm_continuous_batching + server`): `137 passed, 8 deselected`.
+- `#105` validation suite (`cli_runtime_policies + cli_localhost + docs_drift + mllm_continuous_batching + server`): `100 passed, 6 deselected`.
 
 ## P1.10 validation outcomes (2026-02-25)
 

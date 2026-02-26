@@ -28,6 +28,7 @@ Current fork scope:
   - Text profile cleared token-agreement gate; tested VLM profiles remained well below threshold in batched mode.
 - **Upstream sync**:
   - Pulled upstream MLLM serialization fix to exclude `None` fields and avoid null-key template/schema issues.
+  - Completed U3-A upstream import pass (`#95`, `#109`, `#105`; `#54` already present in fork paths).
 
 ## Milestone: P0/P1 Performance
 
@@ -77,6 +78,22 @@ Recommended runtime policy:
 Latest integrated upstream maintenance:
 - `f514235` (cherry-pick of upstream `6d55631`)
 - MLLM message/content-part serialization now excludes `None` fields (`exclude_none=True`) to prevent null-key template misinterpretation and strict-client schema failures.
+
+U3-A upstream import closure (2026-02-26):
+- `11e0bd7` (`#95`): tool-call argument schema coercion hardening.
+- `2888fbf` (`#109`): UTF-8-safe incremental streaming decode via detokenizer buffering.
+- `1830be0` (`#105`): MLLM prefill override CLI clarity/validation.
+- `cdae83a` (fork follow-on): wires MLLM prefill-step override into batched-engine startup.
+- `#54` evaluation: no net patch required (fork already forwarded `top_p` in affected MLLM chat/stream paths).
+
+Validation snapshots for this closure:
+- Coercion + full suite validation from U3 item #95 pass:
+  - targeted coercion tests: `3 passed`
+  - full venv suite: `1031 passed, 5 skipped, 20 deselected`
+- UTF-8 detokenizer import validation:
+  - `tests/test_streaming_detokenizer.py` + scheduler/server suites: `137 passed, 8 deselected`
+- MLLM prefill override import/wiring validation:
+  - CLI + docs drift + MLLM batching + server suites: `100 passed, 6 deselected`
 
 ## Detailed references
 
