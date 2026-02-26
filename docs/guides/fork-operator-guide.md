@@ -125,7 +125,15 @@ vllm-mlx serve mlx-community/some-model --localhost --offline
 - Current detector does not expose runtime flags yet (policy/controls work is planned separately).
 - `frequency_penalty` is supported in OpenAI-compatible requests and mapped to repetition-penalty behavior.
 
-## 7) Troubleshooting
+## 7) Variant B policy guardrails
+
+- Treat confidence as one signal, not the primary routing decision signal.
+- Use task type first (text extraction, tool use, VLM reasoning) when selecting model/profile.
+- Keep complexity-based auto-routing disabled by default; only enable behind explicit operator policy.
+- Use deterministic mode for repro/evaluation runs; use default batched mode for throughput-first production paths.
+- Keep diagnostics additive and opt-in (`include_diagnostics`, `diagnostics_level`) so default latency paths stay unchanged.
+
+## 8) Troubleshooting
 
 ### Server starts but client requests fail
 
@@ -156,7 +164,7 @@ Tune:
 - `--memory-action` (`warn`, `reduce-context`, `reject-new`)
 - `--memory-monitor-interval`
 
-## 8) Recommended docs to pair with this guide
+## 9) Recommended docs to pair with this guide
 
 - [OpenAI-Compatible Server](server.md)
 - [Tool Calling](tool-calling.md)

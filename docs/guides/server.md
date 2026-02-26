@@ -137,6 +137,11 @@ object. Use `diagnostics_level` to choose:
 - `basic` (default): context and visual-load summary
 - `deep`: basic + runtime reliability state snapshot
 
+Operator policy note:
+- diagnostics are observability signals, not primary quality scores
+- avoid confidence-only routing decisions
+- keep complexity-based routing disabled unless explicitly policy-gated
+
 ### Models
 
 ```bash
