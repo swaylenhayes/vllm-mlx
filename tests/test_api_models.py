@@ -8,6 +8,9 @@ These are pure Pydantic models with no MLX dependency.
 
 import time
 
+import pytest
+from pydantic import ValidationError
+
 from vllm_mlx.api.models import (
     AssistantMessage,
     AudioSeparationRequest,
@@ -292,6 +295,22 @@ class TestChatCompletion:
         )
         assert req.video_fps == 1.0
         assert req.video_max_frames == 16
+
+    def test_mllm_request_video_fps_validation(self):
+        with pytest.raises(ValidationError):
+            ChatCompletionRequest(
+                model="test-model",
+                messages=[Message(role="user", content="Hello")],
+                video_fps=9.5,
+            )
+
+    def test_mllm_request_video_max_frames_validation(self):
+        with pytest.raises(ValidationError):
+            ChatCompletionRequest(
+                model="test-model",
+                messages=[Message(role="user", content="Hello")],
+                video_max_frames=256,
+            )
 
     def test_assistant_message_reasoning(self):
         msg = AssistantMessage(

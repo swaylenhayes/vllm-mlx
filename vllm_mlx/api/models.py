@@ -181,8 +181,8 @@ class ChatCompletionRequest(BaseModel):
     # Structured output
     response_format: ResponseFormat | dict | None = None
     # MLLM-specific parameters
-    video_fps: float | None = None
-    video_max_frames: int | None = None
+    video_fps: float | None = Field(default=None, gt=0.0, le=8.0)
+    video_max_frames: int | None = Field(default=None, ge=1, le=128)
     # Request timeout in seconds (None = use server default)
     timeout: float | None = None
     # Optional additive diagnostics payload for backend reliability metadata.

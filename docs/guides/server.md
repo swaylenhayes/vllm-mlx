@@ -116,6 +116,15 @@ for chunk in stream:
         print(chunk.choices[0].delta.content, end="")
 ```
 
+Video request contract:
+- `video_fps`: `(0.0, 8.0]`
+- `video_max_frames`: `[1, 128]`
+- max video inputs per request: `4`
+- video inputs require a multimodal runtime (`model_type=mllm`)
+
+If violated, server returns HTTP `400` with a clear contract message
+(for example: too many videos, non-multimodal runtime, or invalid video payload).
+
 ### Completions
 
 ```bash

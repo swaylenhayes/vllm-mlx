@@ -307,6 +307,89 @@ class TestHelperFunctions:
 
         assert len(videos) == 1
 
+    def test_validate_video_request_contract_rejects_non_mllm_runtime(self):
+        from vllm_mlx.server import (
+            ChatCompletionRequest,
+            HTTPException,
+            Message,
+            _validate_video_request_contract,
+        )
+
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[
+                Message(
+                    role="user",
+                    content=[
+                        {"type": "text", "text": "Describe this"},
+                        {
+                            "type": "video_url",
+                            "video_url": {"url": "https://example.com/video.mp4"},
+                        },
+                    ],
+                )
+            ],
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            _validate_video_request_contract(request, engine_is_mllm=False)
+        assert exc_info.value.status_code == 400
+        assert "multimodal model" in str(exc_info.value.detail)
+
+    def test_validate_video_request_contract_rejects_too_many_videos(self):
+        from vllm_mlx.server import (
+            ChatCompletionRequest,
+            HTTPException,
+            Message,
+            _validate_video_request_contract,
+        )
+
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[
+                Message(
+                    role="user",
+                    content=[
+                        {"type": "video", "video": "v1.mp4"},
+                        {"type": "video", "video": "v2.mp4"},
+                        {"type": "video", "video": "v3.mp4"},
+                        {"type": "video", "video": "v4.mp4"},
+                        {"type": "video", "video": "v5.mp4"},
+                    ],
+                )
+            ],
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            _validate_video_request_contract(request, engine_is_mllm=True)
+        assert exc_info.value.status_code == 400
+        assert "Too many video inputs" in str(exc_info.value.detail)
+
+    def test_validate_video_request_contract_allows_valid_mllm_request(self):
+        from vllm_mlx.server import (
+            ChatCompletionRequest,
+            Message,
+            _validate_video_request_contract,
+        )
+
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[
+                Message(
+                    role="user",
+                    content=[
+                        {"type": "text", "text": "Describe this"},
+                        {"type": "video", "video": "/tmp/demo.mp4"},
+                    ],
+                )
+            ],
+            video_fps=2.0,
+            video_max_frames=32,
+        )
+
+        videos = _validate_video_request_contract(request, engine_is_mllm=True)
+        assert videos == ["/tmp/demo.mp4"]
+
     def test_resolve_repetition_penalty_prefers_explicit(self):
         from vllm_mlx.server import _resolve_repetition_penalty
 

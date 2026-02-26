@@ -78,6 +78,8 @@ class MLLMRequest:
     prompt: str
     images: Optional[List[str]] = None
     videos: Optional[List[str]] = None
+    video_fps: float | None = None
+    video_max_frames: int | None = None
     sampling_params: SamplingParams = field(default_factory=SamplingParams)
     arrival_time: float = field(default_factory=time.time)
 
@@ -264,6 +266,8 @@ class MLLMScheduler:
         prompt: str,
         images: Optional[List[str]] = None,
         videos: Optional[List[str]] = None,
+        video_fps: float | None = None,
+        video_max_frames: int | None = None,
         max_tokens: int = 256,
         temperature: float = 0.7,
         top_p: float = 0.9,
@@ -301,6 +305,8 @@ class MLLMScheduler:
             prompt=prompt,
             images=images,
             videos=videos,
+            video_fps=video_fps,
+            video_max_frames=video_max_frames,
             sampling_params=sampling_params,
         )
 
@@ -394,6 +400,16 @@ class MLLMScheduler:
                 prompt=request.prompt,
                 images=request.images,
                 videos=request.videos,
+                video_fps=(
+                    request.video_fps
+                    if request.video_fps is not None
+                    else self.config.default_video_fps
+                ),
+                video_max_frames=(
+                    request.video_max_frames
+                    if request.video_max_frames is not None
+                    else self.config.max_video_frames
+                ),
                 max_tokens=request.sampling_params.max_tokens,
                 temperature=request.sampling_params.temperature,
                 top_p=request.sampling_params.top_p,
@@ -632,6 +648,8 @@ class MLLMScheduler:
         prompt: str,
         images: Optional[List[str]] = None,
         videos: Optional[List[str]] = None,
+        video_fps: float | None = None,
+        video_max_frames: int | None = None,
         max_tokens: int = 256,
         temperature: float = 0.7,
         top_p: float = 0.9,
@@ -656,6 +674,8 @@ class MLLMScheduler:
             prompt=prompt,
             images=images,
             videos=videos,
+            video_fps=video_fps,
+            video_max_frames=video_max_frames,
             max_tokens=max_tokens,
             temperature=temperature,
             top_p=top_p,

@@ -153,6 +153,10 @@ _FALLBACK_TOP_P = 0.9
 _DIAGNOSTICS_DEFAULT_LEVEL = "basic"
 _DIAGNOSTICS_LEVELS = ("basic", "deep")
 _REPETITION_SUPPORTED_MODES = ("safe", "strict")
+_VIDEO_FPS_MIN = 0.1
+_VIDEO_FPS_MAX = 8.0
+_VIDEO_MAX_FRAMES_MAX = 128
+_VIDEO_MAX_INPUTS_PER_REQUEST = 4
 
 
 class ConcurrencyTracker:
@@ -1949,6 +1953,88 @@ def _count_visual_inputs(messages: list[Message]) -> int:
     return count
 
 
+def _collect_video_inputs(messages: list[Message]) -> list[str]:
+    """Extract non-empty video inputs from request messages."""
+    _, _, videos = extract_multimodal_content(messages)
+    collected: list[str] = []
+    for item in videos:
+        if isinstance(item, str) and item.strip():
+            collected.append(item.strip())
+    return collected
+
+
+def _validate_video_request_contract(
+    request: ChatCompletionRequest,
+    *,
+    engine_is_mllm: bool,
+) -> list[str]:
+    """
+    Validate video request bounds and runtime compatibility.
+
+    Returns a normalized list of video inputs.
+    """
+    _, _, raw_videos = extract_multimodal_content(request.messages)
+    videos: list[str] = []
+    for idx, item in enumerate(raw_videos):
+        if not isinstance(item, str) or not item.strip():
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Invalid video input at index "
+                    f"{idx}: expected non-empty video URL/path/base64 payload."
+                ),
+            )
+        videos.append(item.strip())
+    if not videos:
+        return []
+
+    if len(videos) > _VIDEO_MAX_INPUTS_PER_REQUEST:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Too many video inputs in one request: "
+                f"{len(videos)} > {_VIDEO_MAX_INPUTS_PER_REQUEST}. "
+                "Reduce videos per request or split into multiple requests."
+            ),
+        )
+
+    if not engine_is_mllm:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Video inputs require a multimodal model. "
+                "Current runtime is text-only (llm)."
+            ),
+        )
+
+    # Request schema enforces these bounds, but keep server-side guardrails for
+    # explicit runtime contracts and future non-Pydantic call paths.
+    if (
+        request.video_fps is not None
+        and (request.video_fps < _VIDEO_FPS_MIN or request.video_fps > _VIDEO_FPS_MAX)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"video_fps out of range: {request.video_fps}. "
+                f"Allowed range: {_VIDEO_FPS_MIN}..{_VIDEO_FPS_MAX}."
+            ),
+        )
+    if (
+        request.video_max_frames is not None
+        and request.video_max_frames > _VIDEO_MAX_FRAMES_MAX
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"video_max_frames out of range: {request.video_max_frames}. "
+                f"Maximum allowed: {_VIDEO_MAX_FRAMES_MAX}."
+            ),
+        )
+
+    return videos
+
+
 def _classify_visual_phase(
     *,
     visual_inputs: int,
@@ -3377,6 +3463,7 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
         include_diagnostics=request.include_diagnostics,
         diagnostics_level=request.diagnostics_level,
     )
+    _validate_video_request_contract(request, engine_is_mllm=engine.is_mllm)
     effective_repetition_policy, override_accepted = _resolve_repetition_policy(
         requested_override=request.repetition_policy_override,
         request=raw_request,

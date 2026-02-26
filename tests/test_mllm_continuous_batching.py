@@ -90,6 +90,8 @@ class TestMLLMBatchRequest:
         assert req.max_tokens == 256
         assert req.temperature == 0.7
         assert req.top_p == 0.9
+        assert req.video_fps == 2.0
+        assert req.video_max_frames == 128
         assert req.output_tokens == []
 
 
@@ -257,6 +259,81 @@ class TestMLLMSchedulerConfig:
         assert config.prefill_batch_size == 2
         assert config.completion_batch_size == 8
         assert config.enable_vision_cache is False
+
+
+class TestMLLMSchedulerVideoParams:
+    """Tests for video parameter propagation in scheduler request state."""
+
+    def test_add_request_stores_video_sampling_settings(self):
+        from vllm_mlx.mllm_scheduler import MLLMScheduler, MLLMSchedulerConfig
+
+        model = MagicMock()
+        model.config = None
+        processor = MagicMock()
+        processor.tokenizer = MagicMock()
+        processor.tokenizer.eos_token_id = 2
+        processor.tokenizer.eos_token_ids = None
+
+        scheduler = MLLMScheduler(
+            model=model,
+            processor=processor,
+            config=MLLMSchedulerConfig(enable_vision_cache=False),
+        )
+
+        request_id = scheduler.add_request(
+            prompt="Describe this video",
+            videos=["demo.mp4"],
+            video_fps=1.5,
+            video_max_frames=24,
+            max_tokens=32,
+        )
+        request = scheduler.get_request(request_id)
+
+        assert request is not None
+        assert request.videos == ["demo.mp4"]
+        assert request.video_fps == 1.5
+        assert request.video_max_frames == 24
+
+    def test_schedule_waiting_propagates_video_params_to_batch_request(self):
+        from vllm_mlx.mllm_scheduler import MLLMScheduler, MLLMSchedulerConfig
+
+        class DummyBatchGenerator:
+            def __init__(self):
+                self.inserted = None
+
+            def insert(self, batch_requests):
+                self.inserted = batch_requests
+                return list(range(100, 100 + len(batch_requests)))
+
+        model = MagicMock()
+        model.config = None
+        processor = MagicMock()
+        processor.tokenizer = MagicMock()
+        processor.tokenizer.eos_token_id = 2
+        processor.tokenizer.eos_token_ids = None
+
+        scheduler = MLLMScheduler(
+            model=model,
+            processor=processor,
+            config=MLLMSchedulerConfig(enable_vision_cache=False),
+        )
+        dummy_batch = DummyBatchGenerator()
+        scheduler.batch_generator = dummy_batch
+
+        scheduler.add_request(
+            prompt="Describe this video",
+            videos=["demo.mp4"],
+            video_fps=3.0,
+            video_max_frames=48,
+            max_tokens=16,
+        )
+        scheduled = scheduler._schedule_waiting()
+
+        assert len(scheduled) == 1
+        assert dummy_batch.inserted is not None
+        assert len(dummy_batch.inserted) == 1
+        assert dummy_batch.inserted[0].video_fps == 3.0
+        assert dummy_batch.inserted[0].video_max_frames == 48
 
 
 class TestMLLMRequest:

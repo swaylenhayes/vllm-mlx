@@ -118,8 +118,8 @@ Create `mcp.json`:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `video_fps` | Frames per second | 2.0 |
-| `video_max_frames` | Max frames | 32 |
+| `video_fps` | Frames per second (must be `> 0` and `<= 8.0`) | 2.0 |
+| `video_max_frames` | Max extracted frames (must be `1..128`) | 128 |
 
 ## Environment Variables
 
