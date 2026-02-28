@@ -156,6 +156,22 @@ scripts/serve_profile.sh text-default mlx-community/Qwen3-4B-Instruct-2507-4bit
 The launcher always uses the checkout's `.venv` unless `VLLM_MLX_PYTHON` is
 explicitly overridden.
 
+Client-specific shortcut:
+
+```bash
+cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
+scripts/serve_client_profile.sh goose-text mlx-community/Qwen3-4B-Instruct-2507-4bit
+```
+
+Use `serve_client_profile.sh` when you want a client-oriented wrapper around the
+validated backend profiles for:
+
+- Goose
+- Open WebUI
+- Jan
+- AnythingLLM
+- generic OpenAI-compatible clients
+
 ### Profile A: Text local dev default
 
 Good for daily text usage and straightforward local app integration.

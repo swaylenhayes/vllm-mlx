@@ -40,7 +40,8 @@ If you want the shortest path to a working local backend:
 
 1. Use the [Fork Operator Guide](docs/guides/fork-operator-guide.md) for install and serve workflow.
 2. Use the [Known-Good Model And Profile Matrix](docs/guides/model-profile-matrix.md) to pick a starting model/profile.
-3. Use `scripts/serve_profile.sh <profile> <model>` from a checkout when you want the fastest path to a validated profile.
+3. Use the [Client Compatibility](docs/guides/client-compatibility.md) guide when you are connecting Goose, Open WebUI, Jan, or AnythingLLM.
+4. Use `scripts/serve_profile.sh <profile> <model>` or `scripts/serve_client_profile.sh <client-profile> <model>` from a checkout when you want the fastest path to a validated profile.
 
 Current high-signal starting points:
 
@@ -50,6 +51,7 @@ Current high-signal starting points:
 | Deterministic debugging | `text-deterministic` | `scripts/serve_profile.sh text-deterministic mlx-community/Qwen3-4B-Instruct-2507-4bit` |
 | JSON extraction | `text-json` | `scripts/serve_profile.sh text-json mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit` |
 | Multimodal serving | `mllm-default` | `scripts/serve_profile.sh mllm-default mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit` |
+| Goose CLI | `goose-text` / `goose-tools` | `scripts/serve_client_profile.sh goose-text mlx-community/Qwen3-4B-Instruct-2507-4bit` |
 
 Current operator notes:
 - use the published `vllm-mlx` tool for pushed states
