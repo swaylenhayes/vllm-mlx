@@ -34,7 +34,7 @@ working tree is ahead of the installed global binary.
 Canonical example:
 
 ```bash
-cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
+cd /path/to/vllm-mlx
 uv venv .venv
 . .venv/bin/activate
 uv pip install -e ".[dev]"
@@ -43,7 +43,7 @@ uv pip install -e ".[dev]"
 When running from this checkout, prefer the explicit module entrypoint:
 
 ```bash
-/Users/swaylen/dev/vllm-mlx-fork/vllm-mlx/.venv/bin/python -m vllm_mlx.cli
+./.venv/bin/python -m vllm_mlx.cli
 ```
 
 This is the current canonical path for evaluating local backend patches.
@@ -56,7 +56,7 @@ dirtying the main checkout.
 Example:
 
 ```bash
-cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
+cd /path/to/vllm-mlx
 git fetch --all --prune
 git worktree add ../vllm-mlx-qwen-vl-compare -b qwen-vl-compare origin/phase/p1
 cd ../vllm-mlx-qwen-vl-compare
@@ -75,7 +75,7 @@ Recommended operator rule:
 ### Refresh the main checkout
 
 ```bash
-cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
+cd /path/to/vllm-mlx
 git fetch --all --prune
 git switch phase/p1
 git pull --ff-only
@@ -84,7 +84,7 @@ git pull --ff-only
 ### Switch to a project branch
 
 ```bash
-cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
+cd /path/to/vllm-mlx
 git fetch --all --prune
 git switch <branch-name>
 ```
@@ -118,8 +118,8 @@ vllm-mlx download mlx-community/Qwen3-4B-Instruct-2507-4bit
 ### Download through the patched checkout
 
 ```bash
-cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
-/Users/swaylen/dev/vllm-mlx-fork/vllm-mlx/.venv/bin/python -m vllm_mlx.cli download \
+cd /path/to/vllm-mlx
+./.venv/bin/python -m vllm_mlx.cli download \
   mlx-community/Qwen3-4B-Instruct-2507-4bit
 ```
 
@@ -150,7 +150,7 @@ Important:
 Patched-checkout shortcut:
 
 ```bash
-cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
+cd /path/to/vllm-mlx
 scripts/serve_profile.sh text-default mlx-community/Qwen3-4B-Instruct-2507-4bit
 ```
 
@@ -160,7 +160,7 @@ explicitly overridden.
 Client-specific shortcut:
 
 ```bash
-cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
+cd /path/to/vllm-mlx
 scripts/serve_client_profile.sh goose-text mlx-community/Qwen3-4B-Instruct-2507-4bit
 ```
 
@@ -178,8 +178,8 @@ validated backend profiles for:
 Good for daily text usage and straightforward local app integration.
 
 ```bash
-cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
-/Users/swaylen/dev/vllm-mlx-fork/vllm-mlx/.venv/bin/python -m vllm_mlx.cli serve \
+cd /path/to/vllm-mlx
+./.venv/bin/python -m vllm_mlx.cli serve \
   mlx-community/Qwen3-4B-Instruct-2507-4bit \
   --localhost --port 8000 \
   --runtime-mode simple \
@@ -193,8 +193,8 @@ cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
 Use for bug repro, fairness checks, and response-shape comparisons.
 
 ```bash
-cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
-/Users/swaylen/dev/vllm-mlx-fork/vllm-mlx/.venv/bin/python -m vllm_mlx.cli serve \
+cd /path/to/vllm-mlx
+./.venv/bin/python -m vllm_mlx.cli serve \
   mlx-community/Qwen3-4B-Instruct-2507-4bit \
   --localhost --port 8000 \
   --deterministic
@@ -203,8 +203,8 @@ cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
 ### Profile C: Text tool-calling
 
 ```bash
-cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
-/Users/swaylen/dev/vllm-mlx-fork/vllm-mlx/.venv/bin/python -m vllm_mlx.cli serve \
+cd /path/to/vllm-mlx
+./.venv/bin/python -m vllm_mlx.cli serve \
   mlx-community/Qwen3-4B-Instruct-2507-4bit \
   --localhost --port 8000 \
   --runtime-mode auto \
@@ -224,8 +224,8 @@ If clients must send the exact model id instead of `"default"`, add:
 Use this for image or mixed image+text chat.
 
 ```bash
-cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
-/Users/swaylen/dev/vllm-mlx-fork/vllm-mlx/.venv/bin/python -m vllm_mlx.cli serve \
+cd /path/to/vllm-mlx
+./.venv/bin/python -m vllm_mlx.cli serve \
   mlx-community/Qwen3-VL-4B-Instruct-4bit \
   --localhost --port 8000 \
   --runtime-mode simple \
@@ -241,8 +241,8 @@ If you need batching but care about output agreement, keep the divergence monito
 on and serialize when needed.
 
 ```bash
-cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
-/Users/swaylen/dev/vllm-mlx-fork/vllm-mlx/.venv/bin/python -m vllm_mlx.cli serve \
+cd /path/to/vllm-mlx
+./.venv/bin/python -m vllm_mlx.cli serve \
   mlx-community/Qwen3-VL-4B-Instruct-4bit \
   --localhost --port 8000 \
   --runtime-mode auto \
@@ -258,8 +258,8 @@ cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
 Use this profile for JSON-mode and extraction-sensitive evaluations.
 
 ```bash
-cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
-/Users/swaylen/dev/vllm-mlx-fork/vllm-mlx/.venv/bin/python -m vllm_mlx.cli serve \
+cd /path/to/vllm-mlx
+./.venv/bin/python -m vllm_mlx.cli serve \
   mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit \
   --localhost --port 8000 \
   --runtime-mode simple \

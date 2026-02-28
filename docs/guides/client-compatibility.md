@@ -22,7 +22,7 @@ Use it for:
 For the shortest path to a client-ready backend, use the client launcher:
 
 ```bash
-cd /Users/swaylen/dev/vllm-mlx-fork/vllm-mlx
+cd /path/to/vllm-mlx
 
 scripts/serve_client_profile.sh goose-text \
   mlx-community/Qwen3-4B-Instruct-2507-4bit
