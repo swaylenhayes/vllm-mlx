@@ -602,10 +602,9 @@ class ChatCompletionChunkDelta(BaseModel):
     )
     tool_calls: list[dict] | None = None
 
-    @computed_field
     @property
     def reasoning_content(self) -> str | None:
-        """Alias for reasoning field. Serialized for backwards compatibility with clients expecting reasoning_content."""
+        """Alias for reasoning field for in-process compatibility helpers."""
         return self.reasoning
 
 

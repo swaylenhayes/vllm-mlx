@@ -719,7 +719,8 @@ class TestModelSerialization:
     def test_chunk_delta_serializes_reasoning_content(self):
         delta = ChatCompletionChunkDelta(reasoning="thinking")
         data = delta.model_dump()
-        assert data["reasoning_content"] == "thinking"
+        assert data["reasoning"] == "thinking"
+        assert "reasoning_content" not in data
 
     def test_response_format_json_schema_alias(self):
         schema = ResponseFormatJsonSchema(
