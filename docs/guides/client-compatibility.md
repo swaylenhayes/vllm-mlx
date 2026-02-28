@@ -52,6 +52,7 @@ Only rows with exact execution evidence are listed here as validated.
 | Target | Type | Setup path | Text chat | Streaming | System prompt | Tool calling | Multimodal | Auth | Strict model id | Recommended backend path | Overall |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | Goose | terminal agent | built-in OpenAI provider first | pass | pass | pass | pass | planned | pass | pass | `goose-text` then `goose-tools` | conditional |
+| Open WebUI | web app | OpenAI-compatible provider connection | pass | pass | pass | conditional | pass | pass | planned | `open-webui-text` then `open-webui-mllm` | conditional |
 
 Why Goose is still overall `conditional`:
 
@@ -60,6 +61,7 @@ Why Goose is still overall `conditional`:
 Backing evidence:
 
 - `_docs/exports/goose-vllm-mlx-validation-2026-02-28/artifacts/summary.md`
+- `_docs/exports/open-webui-vllm-mlx-validation-2026-02-28/artifacts/summary.md`
 
 ## Validation Queue
 
@@ -67,9 +69,15 @@ These targets are actively queued but not yet published as validated:
 
 | Target | Best path | Current state |
 |---|---|---|
-| Open WebUI | `open-webui-text` then `open-webui-mllm` | checklist + corpus + internal guide ready |
 | Jan | `jan` | checklist + corpus + internal guide ready |
 | AnythingLLM | `anythingllm` | checklist + corpus + internal guide ready |
+
+Open WebUI notes:
+
+- validated on local Open WebUI `v0.8.5`
+- no manual model allowlist was required in the first local pass
+- tool use remains `conditional` until the backend OpenAI tool-call request
+  shape is independently confirmed
 
 ## Connection Notes
 

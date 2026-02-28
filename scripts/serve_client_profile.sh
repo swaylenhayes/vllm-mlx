@@ -104,7 +104,7 @@ esac
 API_KEY="${VLLM_MLX_CLIENT_API_KEY:-$DEFAULT_API_KEY}"
 
 EXTRA_ARGS=("$@")
-if ! contains_flag "--api-key" "${EXTRA_ARGS[@]}"; then
+if ! contains_flag "--api-key" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"; then
   EXTRA_ARGS+=(--api-key "$API_KEY")
 fi
 
@@ -112,5 +112,4 @@ echo "Launching client profile '${CLIENT_PROFILE}'"
 echo "Mapped serve profile: ${SERVE_PROFILE}"
 echo "Default API key label: ${API_KEY}"
 
-exec "${SERVE_PROFILE_SCRIPT}" "${SERVE_PROFILE}" "${MODEL}" "${EXTRA_ARGS[@]}"
-
+exec "${SERVE_PROFILE_SCRIPT}" "${SERVE_PROFILE}" "${MODEL}" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
