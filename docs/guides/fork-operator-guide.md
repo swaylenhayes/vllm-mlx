@@ -8,7 +8,7 @@ Use it for:
 - managing multiple branches or project-specific test environments
 - starting text and multimodal servers with the right profile
 - understanding which request settings are controlled by the server vs the client
-- validating frontend chat apps such as SemaChat against the backend
+- validating OpenAI-compatible clients against the backend
 
 ## 1) Pick the right runtime surface
 
@@ -394,14 +394,14 @@ curl -sS http://localhost:8000/v1/chat/completions \
   }' | jq
 ```
 
-## 8) SemaChat and client-app guidance
+## 8) OpenAI-Compatible Client Guidance
 
-SemaChat or similar apps should target the OpenAI-compatible API:
+OpenAI-compatible clients should target the OpenAI-compatible API:
 
 - base URL: `http://localhost:8000/v1`
 - model: `"default"` unless the client insists on the exact id
 
-Recommended interpretation of common frontend settings:
+Recommended interpretation of common client settings:
 
 - `temperature`: maps directly to request `temperature`
 - `top_p`: maps directly to request `top_p`
@@ -413,7 +413,7 @@ Recommended interpretation of common frontend settings:
 - `timeout`: usually client-side request timeout; it should be set high enough
   to tolerate the backend's expected latency and server `--timeout`
 
-Likely frontend-only unless the app explicitly serializes it:
+Likely client-only unless the app explicitly serializes it:
 
 - `max messages`: usually local history truncation or UI memory behavior, not a
   backend inference parameter
@@ -425,7 +425,7 @@ Current operator caveats:
 - if the app does not emit OpenAI-style multimodal content blocks, image tests
   may fail even when the backend is correct
 
-Suggested SemaChat validation order:
+Suggested client validation order:
 1. text non-stream
 2. text stream
 3. text with system prompt
@@ -447,7 +447,7 @@ For every reported run, capture:
 - exact runner path
 - whether the run used the published tool or the patched checkout
 - prompt or request payload
-- frontend app name if applicable
+- client name if applicable
 - latency, token counts, visible reasoning leakage, and output-format compliance
 
 Recommended intake policy:
@@ -490,7 +490,7 @@ Then either:
 Check:
 - `GET /v1/capabilities` for expected features and runtime metadata
 - auth mismatch if `--api-key` is enabled
-- frontend request format, especially for images and system prompts
+- client request format, especially for images and system prompts
 - whether the client is timing out before the server does
 
 ### Model load or download failures
