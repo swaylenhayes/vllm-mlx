@@ -8,6 +8,7 @@ Use it for:
 - managing multiple branches or project-specific test environments
 - starting text and multimodal servers with the right profile
 - understanding which request settings are controlled by the server vs the client
+- mapping common client settings onto backend request fields
 - validating OpenAI-compatible clients against the backend
 
 ## 1) Pick the right runtime surface
@@ -417,6 +418,9 @@ OpenAI-compatible clients should target the OpenAI-compatible API:
 - base URL: `http://localhost:8000/v1`
 - model: `"default"` unless the client insists on the exact id
 
+Use [Client Settings Crosswalk](client-settings-crosswalk.md) for the durable
+field-by-field mapping. Summary:
+
 Recommended interpretation of common client settings:
 
 - `temperature`: maps directly to request `temperature`
@@ -535,6 +539,7 @@ Tune:
 
 ## 12) Recommended docs to pair with this guide
 
+- [Client Settings Crosswalk](client-settings-crosswalk.md)
 - [OpenAI-Compatible Server](server.md)
 - [Tool Calling](tool-calling.md)
 - [Multimodal](multimodal.md)

@@ -87,6 +87,10 @@ If the client runs in Docker and the backend runs on the host, switch to a host-
 http://host.docker.internal:8000/v1
 ```
 
+For field-by-field setting behavior, use:
+
+- [Client Settings Crosswalk](client-settings-crosswalk.md)
+
 If you need the backend reachable off-host, run with:
 
 ```bash
@@ -112,6 +116,6 @@ scripts/serve_client_profile.sh generic-openai \
 ## Related Guides
 
 - [Fork Operator Guide](fork-operator-guide.md)
+- [Client Settings Crosswalk](client-settings-crosswalk.md)
 - [Known-Good Model And Profile Matrix](model-profile-matrix.md)
 - [OpenAI-Compatible Server](server.md)
-

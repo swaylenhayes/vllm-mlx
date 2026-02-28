@@ -40,8 +40,9 @@ If you want the shortest path to a working local backend:
 
 1. Use the [Fork Operator Guide](docs/guides/fork-operator-guide.md) for install and serve workflow.
 2. Use the [Known-Good Model And Profile Matrix](docs/guides/model-profile-matrix.md) to pick a starting model/profile.
-3. Use the [Client Compatibility](docs/guides/client-compatibility.md) guide when you are connecting Goose, Open WebUI, Jan, or AnythingLLM.
-4. Use `scripts/serve_profile.sh <profile> <model>` or `scripts/serve_client_profile.sh <client-profile> <model>` from a checkout when you want the fastest path to a validated profile.
+3. Use the [Client Compatibility](docs/guides/client-compatibility.md) guide to see which external clients are evidence-backed vs queued.
+4. Use the [Client Settings Crosswalk](docs/guides/client-settings-crosswalk.md) when you need to map GUI settings onto backend request fields.
+5. Use `scripts/serve_profile.sh <profile> <model>` or `scripts/serve_client_profile.sh <client-profile> <model>` from a checkout when you want the fastest path to a validated profile.
 
 Current high-signal starting points:
 

@@ -26,6 +26,24 @@ Important rules:
 | Image or mixed image+text chat | Qwen3-VL family and similar MLLMs | `mllm-default` | Simple runtime avoids extra batching noise |
 | Correctness-sensitive multimodal concurrency | Qwen3-VL family and similar MLLMs | `mllm-correctness` | Divergence monitor plus serialize fallback |
 
+## Client-Safe Defaults
+
+Use these when the client is known to speak an OpenAI-style API but you have not
+yet proven its exact setting serialization behavior.
+
+| Client goal | Recommended backend path | Recommended model family | Request posture | Current evidence boundary |
+|---|---|---|---|---|
+| Generic desktop or web text app | `text-default` or `generic-openai` | Qwen3 text instruct | Start with client defaults, then verify `stream` and `max_tokens` | Safest first-pass path for OpenAI-compatible clients |
+| Tool-capable terminal agent | `text-tools` or `goose-tools` | Validated Qwen3 text instruct | Send `tools` and `tool_choice` explicitly | Goose tool path is evidence-backed |
+| Deterministic repro or bug triage | `text-deterministic` | Qwen3 text instruct | Force `temperature=0.0`, `top_p=1.0`, fixed prompts | Use when repeatability matters more than throughput |
+| JSON extraction or structured output | `text-json` | Qwen3 text or MoE instruct | Prefer schema or `json_object`; keep prompt stable | Best first stop for strict extraction work |
+| Multimodal client validation | `mllm-default` or `generic-mllm` | Qwen3-VL family | Start with `temperature=0.0`, `top_p=1.0`, `enable_thinking=false` when exposed | Backend profile is ready; client upload path still needs client-specific proof |
+
+Current public client-validation boundary:
+- Goose is the first evidence-backed public row
+- Open WebUI, Jan, and AnythingLLM are queued next
+- SemaChat remains useful as an internal regression client, not the lead public row
+
 ## Current Launcher Profiles
 
 After creating the checkout venv, run:
@@ -96,6 +114,7 @@ validation already recorded in:
 - [Fork Benefits](../benchmarks/fork-benefits.md)
 - [Fork Improvement Log](../benchmarks/fork-improvement-log.md)
 - [Fork Operator Guide](fork-operator-guide.md)
+- [Client Settings Crosswalk](client-settings-crosswalk.md)
 
 This page should evolve as more public benchmark and compatibility data is
 published.
