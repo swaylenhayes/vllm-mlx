@@ -723,6 +723,21 @@ print(response.choices[0].message.reasoning)  # Step-by-step thinking
 print(response.choices[0].message.content)    # Final answer
 ```
 
+To explicitly disable Qwen-style thinking for a single request,
+set `enable_thinking` to `false`:
+
+```python
+response = client.chat.completions.create(
+    model="default",
+    messages=[{"role": "user", "content": "Return valid JSON only."}],
+    response_format={"type": "json_object"},
+    enable_thinking=False,
+)
+```
+
+This applies to chat-template paths that honor the `enable_thinking` kwarg,
+including both text and multimodal chat routes in the current backend.
+
 For streaming, reasoning chunks arrive first, followed by content chunks:
 
 ```python

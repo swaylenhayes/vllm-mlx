@@ -106,6 +106,7 @@ Create `mcp.json`:
 | `max_tokens` | Max tokens to generate | 256 |
 | `temperature` | Sampling temperature | Model default |
 | `top_p` | Nucleus sampling | Model default |
+| `enable_thinking` | Per-request chat-template override for Qwen-style thinking on supported text and multimodal chat paths | None |
 | `stream` | Enable streaming | `true` |
 | `stop` | Stop sequences | None |
 | `repetition_policy_override` | Per-request repetition detector mode (`safe`, `strict`) | Server default |

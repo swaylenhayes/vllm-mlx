@@ -3453,7 +3453,8 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
     logger.info(
         f"[REQUEST] POST /v1/chat/completions stream={request.stream} "
         f"model={request.model!r} max_tokens={request.max_tokens} "
-        f"temp={request.temperature} msgs={n_msgs} roles={msg_roles} "
+        f"temp={request.temperature} enable_thinking={request.enable_thinking} "
+        f"msgs={n_msgs} roles={msg_roles} "
         f"total_chars={total_chars} tools={n_tools} "
         f"response_format={request.response_format}"
     )
@@ -3524,6 +3525,8 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
     )
     if repetition_penalty is not None:
         chat_kwargs["repetition_penalty"] = repetition_penalty
+    if request.enable_thinking is not None:
+        chat_kwargs["enable_thinking"] = request.enable_thinking
     chat_kwargs.update(_build_engine_thinking_kwargs(request.max_thinking_tokens))
 
     # Add multimodal content

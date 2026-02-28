@@ -466,8 +466,17 @@ class TestSimpleEngineToolChoicePassthrough:
         model.tokenizer.apply_chat_template = MagicMock(return_value="prompt")
         model.tokenizer.encode = MagicMock(return_value=[101, 102])
 
-        def strict_chat(*, messages, max_tokens, temperature, top_p, stop, tools):
-            del messages, max_tokens, temperature, top_p, stop, tools
+        def strict_chat(
+            *,
+            messages,
+            max_tokens,
+            temperature,
+            top_p,
+            stop,
+            tools,
+            enable_thinking,
+        ):
+            del messages, max_tokens, temperature, top_p, stop, tools, enable_thinking
             return MagicMock(text="ok", tokens=[1], finish_reason="stop")
 
         model.chat = MagicMock(side_effect=strict_chat)

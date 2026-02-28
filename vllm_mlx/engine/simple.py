@@ -133,17 +133,20 @@ class SimpleEngine(BaseEngine):
         messages: list[dict[str, Any]],
         template_tools: list[dict] | None = None,
         template_tool_choice: str | dict | None = None,
+        enable_thinking: bool | None = None,
     ) -> str:
         """Build an LLM prompt from OpenAI-format messages."""
         tokenizer = self._model.tokenizer
         if hasattr(tokenizer, "apply_chat_template"):
             # Disable thinking mode for coder models since it interferes
             # with tool call parsing (tags leak as raw text).
-            enable_thinking = "coder" not in self._model_name.lower()
+            resolved_enable_thinking = enable_thinking
+            if resolved_enable_thinking is None:
+                resolved_enable_thinking = "coder" not in self._model_name.lower()
             template_kwargs = {
                 "tokenize": False,
                 "add_generation_prompt": True,
-                "enable_thinking": enable_thinking,
+                "enable_thinking": resolved_enable_thinking,
             }
             if template_tools:
                 template_kwargs["tools"] = template_tools
@@ -494,6 +497,7 @@ class SimpleEngine(BaseEngine):
         thinking_budget_tokens = kwargs.pop("thinking_budget_tokens", None)
         thinking_start_token = kwargs.pop("thinking_start_token", "<think>")
         thinking_end_token = kwargs.pop("thinking_end_token", "</think>")
+        enable_thinking = kwargs.pop("enable_thinking", None)
         stop = kwargs.pop("stop", None)
         template_tool_choice = kwargs.pop("tool_choice", None)
         llm_repetition_policy = kwargs.pop("repetition_policy", None)
@@ -506,6 +510,7 @@ class SimpleEngine(BaseEngine):
                 messages,
                 template_tools,
                 template_tool_choice,
+                enable_thinking,
             )
 
         if not self._is_mllm and thinking_budget_tokens:
@@ -548,6 +553,7 @@ class SimpleEngine(BaseEngine):
                     stop=stop,
                     tools=template_tools,
                     tool_choice=template_tool_choice,
+                    enable_thinking=enable_thinking,
                     **kwargs,
                 )
                 text = clean_output_text(output.text)
@@ -568,6 +574,7 @@ class SimpleEngine(BaseEngine):
                     top_p=top_p,
                     stop=stop,
                     tools=template_tools,
+                    enable_thinking=enable_thinking,
                     **kwargs,
                 )
                 text = clean_output_text(output.text)
@@ -615,6 +622,7 @@ class SimpleEngine(BaseEngine):
         thinking_budget_tokens = kwargs.pop("thinking_budget_tokens", None)
         thinking_start_token = kwargs.pop("thinking_start_token", "<think>")
         thinking_end_token = kwargs.pop("thinking_end_token", "</think>")
+        enable_thinking = kwargs.pop("enable_thinking", None)
         stop = kwargs.pop("stop", None)
         template_tool_choice = kwargs.pop("tool_choice", None)
 
@@ -638,6 +646,7 @@ class SimpleEngine(BaseEngine):
                         stop=stop,
                         tools=template_tools,
                         tool_choice=template_tool_choice,
+                        enable_thinking=enable_thinking,
                         **kwargs,
                     )
                 )
@@ -668,6 +677,7 @@ class SimpleEngine(BaseEngine):
             messages,
             template_tools,
             template_tool_choice,
+            enable_thinking,
         )
 
         if thinking_budget_tokens:

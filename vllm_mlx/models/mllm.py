@@ -785,6 +785,16 @@ class MLXMultimodalLM:
         )
         return save_frames_to_temp(frames)
 
+    @staticmethod
+    def _apply_enable_thinking_override(
+        template_kwargs: dict,
+        enable_thinking: bool | None,
+    ) -> dict:
+        """Attach request-level thinking override to template kwargs."""
+        if enable_thinking is not None:
+            template_kwargs["enable_thinking"] = enable_thinking
+        return template_kwargs
+
     def generate(
         self,
         prompt: str,
@@ -837,6 +847,7 @@ class MLXMultimodalLM:
 
         images = images or []
         videos = videos or []
+        enable_thinking = kwargs.pop("enable_thinking", None)
         audio = audio or []
 
         # Process all images (including frames from videos)
@@ -866,11 +877,16 @@ class MLXMultimodalLM:
         # Apply chat template if needed
         if all_images and hasattr(self.processor, "apply_chat_template"):
             try:
+                template_kwargs = self._apply_enable_thinking_override(
+                    {},
+                    enable_thinking,
+                )
                 formatted_prompt = apply_chat_template(
                     self.processor,
                     self.config,
                     prompt,
                     num_images=len(all_images),
+                    **template_kwargs,
                 )
             except Exception:
                 formatted_prompt = prompt
@@ -987,6 +1003,7 @@ class MLXMultimodalLM:
 
         images = images or []
         videos = videos or []
+        enable_thinking = kwargs.pop("enable_thinking", None)
 
         # Process images
         all_images = []
@@ -999,11 +1016,16 @@ class MLXMultimodalLM:
         # Apply chat template
         if all_images:
             try:
+                template_kwargs = self._apply_enable_thinking_override(
+                    {},
+                    enable_thinking,
+                )
                 formatted_prompt = apply_chat_template(
                     self.processor,
                     self.config,
                     prompt,
                     num_images=len(all_images),
+                    **template_kwargs,
                 )
             except Exception:
                 formatted_prompt = prompt
@@ -1058,6 +1080,7 @@ class MLXMultimodalLM:
         template_tool_choice = (
             tool_choice if tool_choice is not None else kwargs.pop("tool_choice", None)
         )
+        enable_thinking = kwargs.pop("enable_thinking", None)
 
         # Extract text and images from messages
         # Build chat_messages for multi-turn support WITH proper image tokens per message
@@ -1169,6 +1192,7 @@ class MLXMultimodalLM:
                 template_kwargs["tools"] = template_tools
             if template_tool_choice is not None:
                 template_kwargs["tool_choice"] = template_tool_choice
+            self._apply_enable_thinking_override(template_kwargs, enable_thinking)
             formatted_prompt = get_chat_template(
                 self.processor,
                 chat_messages,
@@ -1176,7 +1200,7 @@ class MLXMultimodalLM:
             )
         except TypeError as e:
             logger.debug(
-                f"Chat template rejected tools/tool_choice kwargs ({e}); retrying without extras"
+                f"Chat template rejected tools/tool_choice/enable_thinking kwargs ({e}); retrying without extras"
             )
             formatted_prompt = get_chat_template(
                 self.processor,
@@ -1435,6 +1459,7 @@ class MLXMultimodalLM:
                 if tool_choice is not None
                 else kwargs.pop("tool_choice", None)
             )
+            enable_thinking = kwargs.pop("enable_thinking", None)
         except ImportError:
             # Fallback to non-streaming if stream_generate not available
             output = self.chat(
@@ -1548,6 +1573,7 @@ class MLXMultimodalLM:
                 template_kwargs["tools"] = template_tools
             if template_tool_choice is not None:
                 template_kwargs["tool_choice"] = template_tool_choice
+            self._apply_enable_thinking_override(template_kwargs, enable_thinking)
             formatted_prompt = get_chat_template(
                 self.processor,
                 chat_messages,
@@ -1555,7 +1581,7 @@ class MLXMultimodalLM:
             )
         except TypeError as e:
             logger.debug(
-                f"Stream chat template rejected tools/tool_choice kwargs ({e}); retrying without extras"
+                f"Stream chat template rejected tools/tool_choice/enable_thinking kwargs ({e}); retrying without extras"
             )
             formatted_prompt = get_chat_template(
                 self.processor,

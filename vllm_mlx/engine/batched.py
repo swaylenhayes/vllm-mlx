@@ -345,6 +345,7 @@ class BatchedEngine(BaseEngine):
         tools: list[dict] | None = None,
         tool_choice: str | dict | None = None,
         num_images: int = 0,
+        enable_thinking: bool | None = None,
     ) -> str:
         """Apply chat template to messages.
 
@@ -377,6 +378,11 @@ class BatchedEngine(BaseEngine):
                 "tokenize": False,
                 "add_generation_prompt": True,
             }
+            resolved_enable_thinking = enable_thinking
+            if not self._is_mllm and resolved_enable_thinking is None:
+                resolved_enable_thinking = "coder" not in self._model_name.lower()
+            if resolved_enable_thinking is not None:
+                template_kwargs["enable_thinking"] = resolved_enable_thinking
             if tools:
                 template_kwargs["tools"] = tools
             if tool_choice is not None:
@@ -389,7 +395,7 @@ class BatchedEngine(BaseEngine):
             except TypeError as e:
                 # Some templates don't accept 'tools'; retry without them.
                 logger.debug(f"Chat template TypeError, retrying without extras: {e}")
-                for key in ["tools", "tool_choice"]:
+                for key in ["tools", "tool_choice", "enable_thinking"]:
                     if key in template_kwargs:
                         del template_kwargs[key]
                 return template_applicator.apply_chat_template(
@@ -647,6 +653,7 @@ class BatchedEngine(BaseEngine):
         # Convert tools for template
         template_tools = convert_tools_for_template(tools) if tools else None
         template_tool_choice = kwargs.pop("tool_choice", None)
+        enable_thinking = kwargs.pop("enable_thinking", None)
 
         # Apply chat template
         prompt = self._apply_chat_template(
@@ -654,6 +661,7 @@ class BatchedEngine(BaseEngine):
             template_tools,
             template_tool_choice,
             num_images=len(all_images),
+            enable_thinking=enable_thinking,
         )
 
         return await self.generate(
@@ -671,6 +679,7 @@ class BatchedEngine(BaseEngine):
         messages: list[dict[str, Any]],
         tools: list[dict] | None = None,
         tool_choice: str | dict | None = None,
+        enable_thinking: bool | None = None,
     ) -> int:
         """Compute token count for the shared prefix across message variations.
 
@@ -696,6 +705,7 @@ class BatchedEngine(BaseEngine):
                 messages,
                 template_tools,
                 tool_choice,
+                enable_thinking=enable_thinking,
             )
 
             # Build a dummy variant with different last user content
@@ -708,6 +718,7 @@ class BatchedEngine(BaseEngine):
                 dummy_messages,
                 template_tools,
                 tool_choice,
+                enable_thinking=enable_thinking,
             )
 
             tokenizer = self.tokenizer
@@ -771,6 +782,7 @@ class BatchedEngine(BaseEngine):
         # Convert tools for template
         template_tools = convert_tools_for_template(tools) if tools else None
         template_tool_choice = kwargs.pop("tool_choice", None)
+        enable_thinking = kwargs.pop("enable_thinking", None)
 
         # Apply chat template
         prompt = self._apply_chat_template(
@@ -778,6 +790,7 @@ class BatchedEngine(BaseEngine):
             template_tools,
             template_tool_choice,
             num_images=len(all_images),
+            enable_thinking=enable_thinking,
         )
 
         # Compute prefix boundary for cache
@@ -785,6 +798,7 @@ class BatchedEngine(BaseEngine):
             messages,
             tools,
             template_tool_choice,
+            enable_thinking=enable_thinking,
         )
         if prefix_boundary > 0:
             kwargs["prefix_boundary"] = prefix_boundary
