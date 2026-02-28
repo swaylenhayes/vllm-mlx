@@ -40,8 +40,8 @@ yet proven its exact setting serialization behavior.
 | Multimodal client validation | `mllm-default` or `generic-mllm` | Qwen3-VL family | Start with `temperature=0.0`, `top_p=1.0`, `enable_thinking=false` when exposed | Backend profile is ready; client upload path still needs client-specific proof |
 
 Current public client-validation boundary:
-- Goose is the first evidence-backed public row
-- Open WebUI, Jan, and AnythingLLM are queued next
+- Goose and Open WebUI are the current evidence-backed public rows
+- Jan and AnythingLLM are queued next
 - SemaChat remains useful as an internal regression client, not the lead public row
 
 ## Current Launcher Profiles

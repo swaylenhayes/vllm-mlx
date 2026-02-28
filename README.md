@@ -1,228 +1,172 @@
-# vLLM-MLX Fork
-(swaylenhayes/vllm-mlx)
+# vLLM-MLX
 
-**vLLM-like inference for Apple Silicon** - GPU-accelerated Text, Image, Video & Audio on Mac
+**Faster, more reliable local inference on Apple Silicon, with evidence-backed client compatibility and operator-first serving workflows.**
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Apple Silicon](https://img.shields.io/badge/Apple-Silicon-black.svg)](https://support.apple.com/en-us/HT211814)
 [![GitHub](https://img.shields.io/badge/GitHub-swaylenhayes%2Fvllm--mlx-blue?logo=github)](https://github.com/swaylenhayes/vllm-mlx)
 
-## Focus of this fork
+This project builds on [waybarrios/vllm-mlx](https://github.com/waybarrios/vllm-mlx) and pushes it toward a more practical Apple Silicon backend for real local workflows. It grew out of systematic model evaluation work that repeatedly surfaced inference-engine defects and runtime-policy issues as practical blockers for otherwise promising local models.
 
-This repository is a fork of [waybarrios/vllm-mlx](https://github.com/waybarrios/vllm-mlx), focused on backend optimization and reliability improvements for local Apple Silicon inference.
+## At A Glance
 
-Current fork scope:
-
-- **P0**: API contract and reliability hardening
-- **P1**: runtime mode policy, startup diagnostics, cache policy defaults, and capabilities contract helpers
-
-## Highlights so far
-
-- **Throughput improvement**: P1 shows **+50.25%** token throughput vs upstream baseline (`366.22 -> 550.25 tok/s`).
-- **Tool-calling reliability**:
-  - Thinking-model set improved from **6/9 -> 9/9** after P1.10 + follow-up hardening.
-  - MLLM tool-calling improved from **0/9 -> 9/9** on two validated VLMs.
-- **Batch-divergence observability**:
-  - Repeated-run R2C protocol shipped and published with confidence intervals.
-  - Text profile cleared token-agreement gate; tested VLM profiles remained well below threshold in batched mode.
-- **Deterministic profile characterization**:
-  - VB1 measured on Qwen3-4B serving profile: `-2.82%` completion-token throughput vs default in the current 10-prompt snapshot.
-- **Migration interop (Gate G1)**:
-  - Graphiti MCP smoke suite passed on extraction, semantic search, and embeddings path (native `1024`-dim vectors observed).
-- **Upstream sync**:
-  - Pulled upstream MLLM serialization fix to exclude `None` fields and avoid null-key template/schema issues.
-  - Completed U3-A upstream import pass (`#95`, `#109`, `#105`; `#54` already present in fork paths).
-
-## Start Here
-
-If you want the shortest path to a working local backend:
-
-1. Use the [Fork Operator Guide](docs/guides/fork-operator-guide.md) for install and serve workflow.
-2. Use the [Known-Good Model And Profile Matrix](docs/guides/model-profile-matrix.md) to pick a starting model/profile.
-3. Use the [Client Compatibility](docs/guides/client-compatibility.md) guide to see which external clients are evidence-backed vs queued.
-4. Use the [Client Settings Crosswalk](docs/guides/client-settings-crosswalk.md) when you need to map GUI settings onto backend request fields.
-5. Use `scripts/serve_profile.sh <profile> <model>` or `scripts/serve_client_profile.sh <client-profile> <model>` from a checkout when you want the fastest path to a validated profile.
-
-Current high-signal starting points:
-
-| Goal | Recommended starting profile | Example |
+| | What | Why it matters |
 |---|---|---|
-| Daily text serving | `text-default` | `scripts/serve_profile.sh text-default mlx-community/Qwen3-4B-Instruct-2507-4bit` |
-| Deterministic debugging | `text-deterministic` | `scripts/serve_profile.sh text-deterministic mlx-community/Qwen3-4B-Instruct-2507-4bit` |
-| JSON extraction | `text-json` | `scripts/serve_profile.sh text-json mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit` |
-| Multimodal serving | `mllm-default` | `scripts/serve_profile.sh mllm-default mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit` |
-| Goose CLI | `goose-text` / `goose-tools` | `scripts/serve_client_profile.sh goose-text mlx-community/Qwen3-4B-Instruct-2507-4bit` |
+| **Performance** | `+50.25%` token throughput vs upstream baseline | Measurably faster local serving on Apple Silicon |
+| **Client compatibility** | Goose and Open WebUI evidence-backed; Jan and AnythingLLM queued next | Real tools connect today without guessing the backend contract |
+| **Tool reliability** | Thinking-model tools: `6/9 -> 9/9`. MLLM tools: `0/9 -> 9/9` | Agent workflows that previously failed now work |
+| **Serving ergonomics** | Validated profiles for text, deterministic, tools, JSON, and multimodal | Shorter path from clone to working backend |
+| **Runtime controls** | Divergence monitoring, strict model id, `frequency_penalty`, `enable_thinking` | Better debugging and safer correctness-sensitive operation |
+| **Upstream leverage** | Useful upstream fixes integrated; fork-side hardening ships faster | Faster iteration without cutting off upstream value |
 
-Current operator notes:
-- use the published `vllm-mlx` tool for pushed states
-- use the checkout runner when evaluating local patches that are not yet installed globally
-- keep the serve profile fixed during model comparisons and vary only request payloads
-
-## Milestone: P0/P1 Performance
-
-Benchmark configuration:
-- Model: `mlx-community/Qwen3-0.6B-8bit`
-- Command: `vllm-mlx bench ... --max-tokens 64 --max-num-seqs 32 --prefill-batch-size 8 --completion-batch-size 16`
-- Prompts: 10
-- Date: 2026-02-24
-
-| Phase | Commit | Total time (s) | Prompts/s | Tokens/s | Throughput (tok/s) |
-|---|---:|---:|---:|---:|---:|
-| upstream baseline | `1fd1c9a` | 1.94 | 5.16 | 330.11 | 366.22 |
-| P0 | `a00ec35` | 1.31 | 7.62 | 487.72 | 541.06 |
-| P1 | `26b143b` | 1.29 | 7.75 | 496.00 | 550.25 |
-
-| Comparison | Total time | Prompts/s | Tokens/s | Throughput |
-|---|---:|---:|---:|---:|
-| P0 vs upstream | -32.47% | +47.67% | +47.74% | +47.74% |
-| P1 vs upstream | -33.51% | +50.19% | +50.25% | +50.25% |
-| P1 vs P0 | -1.53% | +1.71% | +1.70% | +1.70% |
-
-## Milestone: Reliability (R2A/R2B/R2C)
-
-R2C repeated-run batch divergence results (`runs=5`, `95% CI`, `concurrency=2`, `max_tokens=32`):
-
-| Model | Token agreement (mean, 95% CI) | Exact match (mean) | Verdict |
-|---|---:|---:|---|
-| Qwen3-4B-Instruct-2507-4bit | `97.86%` (`97.86-97.86`) | `80.00%` | Passes `>=95%` token gate |
-| ZwZ-8B-VL-MLX-4bit | `68.65%` (`65.82-71.49`) | `34.00%` | Severe divergence |
-| Qwen3-VL-30B-A3B-Instruct-4bit | `63.85%` (`57.20-70.50`) | `32.00%` | Severe divergence |
-
-Recommended runtime policy:
-- Default monitor profile: `--batch-divergence-threshold 0.95 --batch-divergence-action warn`
-- Correctness-sensitive VLM workloads: `--batch-divergence-action serialize` (or simple runtime path)
-
-## Milestone: VB1 Deterministic Profile Snapshot
-
-Workload: 10 prompts, `max_tokens=64`, `concurrency=10` (`/v1/chat/completions`, Qwen3-4B-Instruct-2507-4bit)
-
-| Profile | Total time (s) | Prompts/s | Tokens/s (completion) |
-|---|---:|---:|---:|
-| default (`--runtime-mode auto --cache-strategy auto`) | 6.95 | 1.44 | 92.04 |
-| deterministic (`--deterministic`) | 7.16 | 1.40 | 89.44 |
-
-Delta (deterministic vs default):
-- Prompts/s: `-2.82%`
-- Tokens/s (completion): `-2.82%`
-
-Artifacts:
-- `benchmarks/phase-results/vb1-throughput-2026-02-26/`
-
-## Milestone: Compatibility and Tool Calling
-
-| Area | Before | Fork outcome |
-|---|---|---|
-| Thinking-model tool reliability | `6/9` ceiling in validation probes | Reached `9/9` in validated set after P1.10 + hardening |
-| MLLM tool-calling | `0/9` on validated VLMs | `9/9` on validated VLMs after I7 |
-| LiquidAI/WaveCut parsing | Unparsed proprietary tool-call format | Added parser aliases `liquidai` / `liquid` / `lfm` |
-| Decode controls | No OpenAI-style frequency control | Added `frequency_penalty` mapping to repetition penalty |
-| Model ID policy | Request model id passthrough only | Added optional strict enforcement via `--strict-model-id` |
-
-## Milestone: Upstream Sync
-
-Latest integrated upstream maintenance:
-- `f514235` (cherry-pick of upstream `6d55631`)
-- MLLM message/content-part serialization now excludes `None` fields (`exclude_none=True`) to prevent null-key template misinterpretation and strict-client schema failures.
-
-U3-A upstream import closure (2026-02-26):
-- `11e0bd7` (`#95`): tool-call argument schema coercion hardening.
-- `2888fbf` (`#109`): UTF-8-safe incremental streaming decode via detokenizer buffering.
-- `1830be0` (`#105`): MLLM prefill override CLI clarity/validation.
-- `cdae83a` (fork follow-on): wires MLLM prefill-step override into batched-engine startup.
-- `#54` evaluation: no net patch required (fork already forwarded `top_p` in affected MLLM chat/stream paths).
-
-Validation snapshots for this closure:
-- Coercion + full suite validation from U3 item #95 pass:
-  - targeted coercion tests: `3 passed`
-  - full venv suite: `1031 passed, 5 skipped, 20 deselected`
-- UTF-8 detokenizer import validation:
-  - `tests/test_streaming_detokenizer.py` + scheduler/server suites: `137 passed, 8 deselected`
-- MLLM prefill override import/wiring validation:
-  - CLI + docs drift + MLLM batching + server suites: `100 passed, 6 deselected`
-
-## Detailed references
-
-- Fork operator runbook: [`docs/guides/fork-operator-guide.md`](docs/guides/fork-operator-guide.md)
-- Fork compatibility and reliability detail: [`docs/benchmarks/fork-benefits.md`](docs/benchmarks/fork-benefits.md)
-- Append-only measured change log: [`docs/benchmarks/fork-improvement-log.md`](docs/benchmarks/fork-improvement-log.md)
-- Phase artifacts: `benchmarks/phase-results/`
-
-> [!NOTE]
-> End of fork-specific summary. Sections below this point are from the upstream project overview and may not reflect fork-specific deltas documented above.
-
-## Overview
-
-vllm-mlx brings native Apple Silicon GPU acceleration to vLLM by integrating:
-
-- **[MLX](https://github.com/ml-explore/mlx)**: Apple's ML framework with unified memory and Metal kernels
-- **[mlx-lm](https://github.com/ml-explore/mlx-lm)**: Optimized LLM inference with KV cache and quantization
-- **[mlx-vlm](https://github.com/Blaizzy/mlx-vlm)**: Vision-language models for multimodal inference
-- **[mlx-audio](https://github.com/Blaizzy/mlx-audio)**: Speech-to-Text and Text-to-Speech with native voices
-- **[mlx-embeddings](https://github.com/Blaizzy/mlx-embeddings)**: Text embeddings for semantic search and RAG
-
-## Features
-
-- **Multimodal** - Text, Image, Video & Audio in one platform
-- **Native GPU acceleration** on Apple Silicon (M1, M2, M3, M4)
-- **Native TTS voices** - Spanish, French, Chinese, Japanese + 5 more languages
-- **OpenAI API compatible** - drop-in replacement for OpenAI client
-- **Anthropic Messages API** - native `/v1/messages` endpoint for Claude Code and OpenCode
-- **Embeddings** - OpenAI-compatible `/v1/embeddings` endpoint with mlx-embeddings
-- **Reasoning Models** - extract thinking process from Qwen3, DeepSeek-R1
-- **MCP Tool Calling** - integrate external tools via Model Context Protocol
-- **Paged KV Cache** - memory-efficient caching with prefix sharing
-- **Continuous Batching** - high throughput for multiple concurrent users
+Benchmarked on Apple Silicon using `mlx-community/Qwen3-0.6B-8bit`. Full configuration appears in [Detailed Benchmarks And Validation](#detailed-benchmarks-and-validation).
 
 ## Quick Start
 
-### Installation
-
-**Using uv (recommended):**
+Install and serve in two commands:
 
 ```bash
-# Install as CLI tool (system-wide)
+# Install
 uv tool install git+https://github.com/swaylenhayes/vllm-mlx.git
 
-# Or install in a project/virtual environment
-uv pip install git+https://github.com/swaylenhayes/vllm-mlx.git
+# Serve (single user, max throughput)
+vllm-mlx serve mlx-community/Qwen3-4B-Instruct-2507-4bit --port 8000
 ```
 
-**Using pip:**
+Or with continuous batching for multiple users:
 
 ```bash
-# Install from GitHub
-pip install git+https://github.com/swaylenhayes/vllm-mlx.git
-
-# Or clone and install in development mode
-git clone https://github.com/swaylenhayes/vllm-mlx.git
-cd vllm-mlx
-pip install -e .
+vllm-mlx serve mlx-community/Qwen3-4B-Instruct-2507-4bit --port 8000 --continuous-batching
 ```
 
-### Start Server
+For the full operator workflow, see the [Fork Operator Guide](docs/guides/fork-operator-guide.md).
+
+## Serving Profiles
+
+For validated serving profiles with tuned defaults, use the launcher scripts from a git checkout:
 
 ```bash
-# Simple mode (single user, max throughput)
-vllm-mlx serve mlx-community/Llama-3.2-3B-Instruct-4bit --port 8000
+# Daily text serving
+scripts/serve_profile.sh text-default mlx-community/Qwen3-4B-Instruct-2507-4bit
 
-# Continuous batching (multiple users)
-vllm-mlx serve mlx-community/Llama-3.2-3B-Instruct-4bit --port 8000 --continuous-batching
+# Connect Goose
+scripts/serve_client_profile.sh goose-text mlx-community/Qwen3-4B-Instruct-2507-4bit
 
-# With API key authentication
-vllm-mlx serve mlx-community/Llama-3.2-3B-Instruct-4bit --port 8000 --api-key your-secret-key
+# Connect Open WebUI
+scripts/serve_client_profile.sh open-webui-text mlx-community/Qwen3-4B-Instruct-2507-4bit
 ```
 
-### Use with OpenAI SDK
+## Compatibility
+
+| Target | Status | Validated capabilities |
+|---|---|---|
+| **Goose** | evidence-backed | text, streaming, system prompt, tools, auth, strict model id |
+| **Open WebUI** | evidence-backed | text, streaming, system prompt, multimodal, auth |
+| **Jan** | queued next | checklist, corpus, and guide ready |
+| **AnythingLLM** | queued next | checklist, corpus, and guide ready |
+
+Open WebUI note:
+- tool use remains `conditional` until the backend OpenAI tool-call request shape is independently captured
+
+Details: [Client Compatibility Guide](docs/guides/client-compatibility.md) · [Client Settings Crosswalk](docs/guides/client-settings-crosswalk.md)
+
+## What This Project Does Differently
+
+**Reliability hardening.** Clearer startup and runtime behavior, better defaults, explicit operator guidance, and deterministic serving paths for correctness-sensitive work.
+
+**Evidence-backed compatibility.** Client validation against actual frontends and agent tools, not just raw endpoint claims. Each client status is backed by a documented test protocol.
+
+**Known-good serving paths.** Profile and launcher helpers for common Mac-local workflows. Pick a profile, start the backend, connect a client.
+
+**Observability and control.** Divergence monitoring with confidence intervals, strict model-id enforcement, request-level reasoning control, and `frequency_penalty` mapping.
+
+**Stronger tool and multimodal support.** Tool-calling reliability improvements across thinking models and VLMs, metadata-based multimodal detection, and proprietary format parser support (`LiquidAI` / `WaveCut`).
+
+**Selective upstream sync.** Upstream fixes are integrated where they help. Missing features and hardening ship faster on the fork side.
+
+## Detailed Benchmarks And Validation
+
+### Throughput
+
+Benchmark configuration: `mlx-community/Qwen3-0.6B-8bit`, 10 prompts, `max_tokens=64`, `max_num_seqs=32`, `prefill_batch_size=8`, `completion_batch_size=16`. Measured 2026-02-24.
+
+| Snapshot | Commit | Total time (s) | Prompts/s | Tokens/s | Throughput (tok/s) |
+|---|---:|---:|---:|---:|---:|
+| Upstream baseline | `1fd1c9a` | 1.94 | 5.16 | 330.11 | 366.22 |
+| Early fork hardening | `a00ec35` | 1.31 | 7.62 | 487.72 | 541.06 |
+| Current published fork | `26b143b` | 1.29 | 7.75 | 496.00 | 550.25 |
+
+| Comparison | Total time | Prompts/s | Tokens/s | Throughput |
+|---|---:|---:|---:|---:|
+| Early fork hardening vs upstream | -32.47% | +47.67% | +47.74% | +47.74% |
+| Current published fork vs upstream | -33.51% | +50.19% | +50.25% | +50.25% |
+| Current published fork vs early hardening | -1.53% | +1.71% | +1.70% | +1.70% |
+
+### Batch Divergence (Reliability)
+
+Repeated-run protocol: 5 runs, 95% CI, concurrency=2, max_tokens=32.
+
+| Model | Token agreement (mean, 95% CI) | Exact match (mean) | Verdict |
+|---|---:|---:|---|
+| Qwen3-4B-Instruct-2507-4bit | 97.86% (97.86-97.86) | 80.00% | Passes >=95% token gate |
+| ZwZ-8B-VL-MLX-4bit | 68.65% (65.82-71.49) | 34.00% | Severe divergence |
+| Qwen3-VL-30B-A3B-Instruct-4bit | 63.85% (57.20-70.50) | 32.00% | Severe divergence |
+
+Recommended runtime policy:
+- Default: `--batch-divergence-threshold 0.95 --batch-divergence-action warn`
+- Correctness-sensitive VLM workloads: `--batch-divergence-action serialize`
+
+### Deterministic Profile
+
+Workload: 10 prompts, max_tokens=64, concurrency=10 (Qwen3-4B-Instruct-2507-4bit).
+
+| Profile | Total time (s) | Prompts/s | Tokens/s (completion) |
+|---|---:|---:|---:|
+| Default | 6.95 | 1.44 | 92.04 |
+| Deterministic (`--deterministic`) | 7.16 | 1.40 | 89.44 |
+
+The deterministic path costs only -2.82% throughput vs default, which is a small price for reproducible output in debugging and correctness-sensitive workflows.
+
+### Capability Deltas
+
+| Area | Before | After |
+|---|---|---|
+| Thinking-model tool reliability | 6/9 ceiling | 9/9 in validated set |
+| MLLM tool-calling | 0/9 on validated VLMs | 9/9 on validated VLMs |
+| LiquidAI/WaveCut parsing | Unparsed proprietary format | Parser aliases `liquidai` / `liquid` / `lfm` |
+| Decode controls | No frequency control | `frequency_penalty` mapped to repetition penalty |
+| Model ID policy | Passthrough only | Optional strict enforcement via `--strict-model-id` |
+| Reasoning control | Profile-level only | Request-level `enable_thinking` |
+| Multimodal detection | Repo-name heuristics | Metadata-based detection |
+| Client launch ergonomics | Manual flag mapping | Published profile and client launchers |
+
+### Upstream Integration
+
+Upstream fixes are integrated selectively. The latest upstream sync includes MLLM serialization hardening (`exclude_none=True`), tool-call argument coercion, UTF-8 streaming decode, and MLLM prefill override clarity. Full validation snapshots (1000+ tests passing) are recorded in the improvement log.
+
+## Guides And References
+
+**Operator:** [Fork Operator Guide](docs/guides/fork-operator-guide.md) · [Known-Good Model/Profile Matrix](docs/guides/model-profile-matrix.md) · [Client Compatibility](docs/guides/client-compatibility.md) · [Client Settings Crosswalk](docs/guides/client-settings-crosswalk.md)
+
+**Evidence:** [Fork Benefits](docs/benchmarks/fork-benefits.md) · [Improvement Log](docs/benchmarks/fork-improvement-log.md) · Phase artifacts: `benchmarks/phase-results/`
+
+**Platform:** [Installation](docs/getting-started/installation.md) · [Quick Start](docs/getting-started/quickstart.md) · [Server Guide](docs/guides/server.md) · [Anthropic Messages API](docs/guides/server.md#anthropic-messages-api) · [Multimodal](docs/guides/multimodal.md) · [Audio](docs/guides/audio.md) · [Embeddings](docs/guides/embeddings.md) · [Reasoning Models](docs/guides/reasoning.md) · [MCP & Tool Calling](docs/guides/mcp-tools.md) · [Continuous Batching](docs/guides/continuous-batching.md) · [CLI Reference](docs/reference/cli.md) · [Supported Models](docs/reference/models.md) · [Configuration](docs/reference/configuration.md) · [LLM Benchmarks](docs/benchmarks/llm.md) · [Image Benchmarks](docs/benchmarks/image.md) · [Video Benchmarks](docs/benchmarks/video.md) · [Audio Benchmarks](docs/benchmarks/audio.md)
+
+---
+
+## Platform
+
+vLLM-MLX brings native Apple Silicon GPU acceleration to vLLM-style inference by integrating [MLX](https://github.com/ml-explore/mlx), [mlx-lm](https://github.com/ml-explore/mlx-lm), [mlx-vlm](https://github.com/Blaizzy/mlx-vlm), [mlx-audio](https://github.com/Blaizzy/mlx-audio), and [mlx-embeddings](https://github.com/Blaizzy/mlx-embeddings). It supports text, image, video, and audio inference with OpenAI and Anthropic API compatibility, continuous batching, paged KV cache, MCP tool calling, reasoning model support, and native TTS in 10+ languages.
+
+For full upstream platform documentation, see the original project: [waybarrios/vllm-mlx](https://github.com/waybarrios/vllm-mlx).
+
+### Use With OpenAI SDK
 
 ```python
 from openai import OpenAI
 
-# Without API key (local development)
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
-
-# With API key (production)
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="your-secret-key")
 
 response = client.chat.completions.create(
     model="default",
@@ -231,9 +175,7 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
-### Use with Anthropic SDK
-
-vllm-mlx exposes an Anthropic-compatible `/v1/messages` endpoint, so tools like Claude Code and OpenCode can connect directly.
+### Use With Anthropic SDK / Claude Code
 
 ```python
 from anthropic import Anthropic
@@ -248,146 +190,19 @@ response = client.messages.create(
 print(response.content[0].text)
 ```
 
-To use with Claude Code:
-
 ```bash
+# Claude Code
 export ANTHROPIC_BASE_URL=http://localhost:8000
 export ANTHROPIC_API_KEY=not-needed
 claude
 ```
 
-See [Anthropic Messages API docs](docs/guides/server.md#anthropic-messages-api) for streaming, tool calling, system messages, and token counting.
-
-### Multimodal (Images & Video)
-
-```bash
-vllm-mlx serve mlx-community/Qwen3-VL-4B-Instruct-3bit --port 8000
-```
-
-```python
-response = client.chat.completions.create(
-    model="default",
-    messages=[{
-        "role": "user",
-        "content": [
-            {"type": "text", "text": "What's in this image?"},
-            {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}
-        ]
-    }]
-)
-```
-
-### Audio (TTS/STT)
-
-```bash
-# Install audio dependencies
-pip install vllm-mlx[audio]
-python -m spacy download en_core_web_sm
-brew install espeak-ng  # macOS, for non-English languages
-```
-
-```bash
-# Text-to-Speech (English)
-python examples/tts_example.py "Hello, how are you?" --play
-
-# Text-to-Speech (Spanish)
-python examples/tts_multilingual.py "Hola mundo" --lang es --play
-
-# List available models and languages
-python examples/tts_multilingual.py --list-models
-python examples/tts_multilingual.py --list-languages
-```
-
-**Supported TTS Models:**
-| Model | Languages | Description |
-|-------|-----------|-------------|
-| Kokoro | EN, ES, FR, JA, ZH, IT, PT, HI | Fast, 82M params, 11 voices |
-| Chatterbox | 15+ languages | Expressive, voice cloning |
-| VibeVoice | EN | Realtime, low latency |
-| VoxCPM | ZH, EN | High quality Chinese/English |
-
-### Reasoning Models
-
-Extract the thinking process from reasoning models like Qwen3 and DeepSeek-R1:
-
-```bash
-# Start server with reasoning parser
-vllm-mlx serve mlx-community/Qwen3-8B-4bit --reasoning-parser qwen3
-```
-
-```python
-response = client.chat.completions.create(
-    model="default",
-    messages=[{"role": "user", "content": "What is 17 × 23?"}]
-)
-
-# Access reasoning separately from the answer
-print("Thinking:", response.choices[0].message.reasoning)
-print("Answer:", response.choices[0].message.content)
-```
-
-**Supported Parsers:**
-| Parser | Models | Description |
-|--------|--------|-------------|
-| `qwen3` | Qwen3 series | Requires both `<think>` and `</think>` tags |
-| `deepseek_r1` | DeepSeek-R1 | Handles implicit `<think>` tag |
-
-### Embeddings
-
-Generate text embeddings for semantic search, RAG, and similarity:
-
-```bash
-# Start server with an embedding model pre-loaded
-vllm-mlx serve mlx-community/Llama-3.2-3B-Instruct-4bit --embedding-model mlx-community/all-MiniLM-L6-v2-4bit
-```
-
-```python
-# Generate embeddings using the OpenAI SDK
-embeddings = client.embeddings.create(
-    model="mlx-community/all-MiniLM-L6-v2-4bit",
-    input=["Hello world", "How are you?"]
-)
-print(f"Dimensions: {len(embeddings.data[0].embedding)}")
-```
-
-See [Embeddings Guide](docs/guides/embeddings.md) for details on supported models and lazy loading.
-
-## Documentation
-
-For full documentation, see the [docs](docs/) directory:
-
-- **Getting Started**
-  - [Installation](docs/getting-started/installation.md)
-  - [Quick Start](docs/getting-started/quickstart.md)
-
-- **User Guides**
-  - [OpenAI-Compatible Server](docs/guides/server.md)
-  - [Anthropic Messages API](docs/guides/server.md#anthropic-messages-api)
-  - [Python API](docs/guides/python-api.md)
-  - [Multimodal (Images & Video)](docs/guides/multimodal.md)
-  - [Audio (STT/TTS)](docs/guides/audio.md)
-  - [Embeddings](docs/guides/embeddings.md)
-  - [Reasoning Models](docs/guides/reasoning.md)
-  - [MCP & Tool Calling](docs/guides/mcp-tools.md)
-  - [Continuous Batching](docs/guides/continuous-batching.md)
-
-- **Reference**
-  - [CLI Commands](docs/reference/cli.md)
-  - [Supported Models](docs/reference/models.md)
-  - [Configuration](docs/reference/configuration.md)
-
-- **Benchmarks**
-  - [LLM Benchmarks](docs/benchmarks/llm.md)
-  - [Image Benchmarks](docs/benchmarks/image.md)
-  - [Video Benchmarks](docs/benchmarks/video.md)
-  - [Audio Benchmarks](docs/benchmarks/audio.md)
-
-## Architecture
+### Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           vLLM API Layer                                │
-│                    (OpenAI-compatible interface)                         │
+│                    (OpenAI + Anthropic compatible)                       │
 └─────────────────────────────────────────────────────────────────────────┘
                                    │
                                    ▼
@@ -402,8 +217,6 @@ For full documentation, see the [docs](docs/) directory:
 │    mlx-lm     │ │   mlx-vlm     │ │   mlx-audio   │ │mlx-embeddings │
 │(LLM inference)│ │ (Vision+LLM)  │ │  (TTS + STT)  │ │ (Embeddings)  │
 └───────────────┘ └───────────────┘ └───────────────┘ └───────────────┘
-        │             │                         │             │
-        └─────────────┴─────────────────────────┴─────────────┘
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -412,118 +225,21 @@ For full documentation, see the [docs](docs/) directory:
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Performance
-
-**LLM Performance (M4 Max, 128GB):**
-
-| Model | Speed | Memory |
-|-------|-------|--------|
-| Qwen3-0.6B-8bit | 402 tok/s | 0.7 GB |
-| Llama-3.2-1B-4bit | 464 tok/s | 0.7 GB |
-| Llama-3.2-3B-4bit | 200 tok/s | 1.8 GB |
-
-**Continuous Batching (5 concurrent requests):**
-
-| Model | Single | Batched | Speedup |
-|-------|--------|---------|---------|
-| Qwen3-0.6B-8bit | 328 tok/s | 1112 tok/s | **3.4x** |
-| Llama-3.2-1B-4bit | 299 tok/s | 613 tok/s | **2.0x** |
-
-**Audio - Speech-to-Text (M4 Max, 128GB):**
-
-| Model | RTF* | Use Case |
-|-------|------|----------|
-| whisper-tiny | **197x** | Real-time, low latency |
-| whisper-large-v3-turbo | **55x** | Best quality/speed balance |
-| whisper-large-v3 | **24x** | Highest accuracy |
-
-*RTF = Real-Time Factor. RTF of 100x means 1 minute transcribes in ~0.6 seconds.
-
-See [benchmarks](docs/benchmarks/) for detailed results.
-
-## Gemma 3 Support
-
-vllm-mlx includes native support for Gemma 3 vision models. Gemma 3 is automatically detected as MLLM.
-
-### Usage
-
-```bash
-# Start server with Gemma 3
-vllm-mlx serve mlx-community/gemma-3-27b-it-4bit --port 8000
-
-# Verify it loaded as MLLM (not LLM)
-curl http://localhost:8000/health
-# Should show: "model_type": "mllm"
-```
-
-### Long Context Patch (mlx-vlm)
-
-Gemma 3's default `sliding_window=1024` limits context to ~10K tokens on Apple Silicon (Metal GPU timeout at higher context). To enable longer context (up to ~50K tokens), patch mlx-vlm:
-
-**Location:** `~/.../site-packages/mlx_vlm/models/gemma3/language.py`
-
-Find the `make_cache` method and replace with:
-
-```python
-def make_cache(self):
-    import os
-    # Set GEMMA3_SLIDING_WINDOW=8192 for ~40K context
-    # Set GEMMA3_SLIDING_WINDOW=0 for ~50K context (full KVCache)
-    sliding_window = int(os.environ.get('GEMMA3_SLIDING_WINDOW', self.config.sliding_window))
-
-    caches = []
-    for i in range(self.config.num_hidden_layers):
-        if (
-            i % self.config.sliding_window_pattern
-            == self.config.sliding_window_pattern - 1
-        ):
-            caches.append(KVCache())
-        elif sliding_window == 0:
-            caches.append(KVCache())  # Full context for all layers
-        else:
-            caches.append(RotatingKVCache(max_size=sliding_window, keep=0))
-    return caches
-```
-
-**Usage:**
-
-```bash
-# Default (~10K max context)
-vllm-mlx serve mlx-community/gemma-3-27b-it-4bit --port 8000
-
-# Extended context (~40K max)
-GEMMA3_SLIDING_WINDOW=8192 vllm-mlx serve mlx-community/gemma-3-27b-it-4bit --port 8000
-
-# Maximum context (~50K max)
-GEMMA3_SLIDING_WINDOW=0 vllm-mlx serve mlx-community/gemma-3-27b-it-4bit --port 8000
-```
-
-**Benchmark Results (M4 Max 128GB):**
-
-| Setting | Max Context | Memory |
-|---------|-------------|--------|
-| Default (1024) | ~10K tokens | ~16GB |
-| `GEMMA3_SLIDING_WINDOW=8192` | ~40K tokens | ~25GB |
-| `GEMMA3_SLIDING_WINDOW=0` | ~50K tokens | ~35GB |
-
 ## Contributing
 
-We welcome contributions! See [Contributing Guide](docs/development/contributing.md) for details.
+Contributions welcome. See the [Contributing Guide](docs/development/contributing.md) for details.
 
-- Bug fixes and improvements
-- Performance optimizations
-- Documentation improvements
-- Benchmarks on different Apple Silicon chips
+Areas where help is especially useful: performance benchmarks on different Apple Silicon chips, client compatibility validation (especially Jan and AnythingLLM), documentation improvements, and bug fixes.
 
-Submit PRs to: [https://github.com/swaylenhayes/vllm-mlx](https://github.com/swaylenhayes/vllm-mlx)
+Submit PRs to: [github.com/swaylenhayes/vllm-mlx](https://github.com/swaylenhayes/vllm-mlx)
 
 ## License
 
-Apache 2.0 - see [LICENSE](LICENSE) for details.
+Apache 2.0 — see [LICENSE](LICENSE) for details.
 
 ## Citation
 
-If you use vLLM-MLX in your research or project, please cite:
+If you use this project in your research, please cite the original:
 
 ```bibtex
 @software{vllm_mlx2025,
@@ -537,9 +253,10 @@ If you use vLLM-MLX in your research or project, please cite:
 
 ## Acknowledgments
 
-- [MLX](https://github.com/ml-explore/mlx) - Apple's ML framework
-- [mlx-lm](https://github.com/ml-explore/mlx-lm) - LLM inference library
-- [mlx-vlm](https://github.com/Blaizzy/mlx-vlm) - Vision-language models
-- [mlx-audio](https://github.com/Blaizzy/mlx-audio) - Text-to-Speech and Speech-to-Text
-- [mlx-embeddings](https://github.com/Blaizzy/mlx-embeddings) - Text embeddings
-- [vLLM](https://github.com/vllm-project/vllm) - High-throughput LLM serving
+- [MLX](https://github.com/ml-explore/mlx) — Apple's ML framework
+- [mlx-lm](https://github.com/ml-explore/mlx-lm) — LLM inference library
+- [mlx-vlm](https://github.com/Blaizzy/mlx-vlm) — Vision-language models
+- [mlx-audio](https://github.com/Blaizzy/mlx-audio) — Text-to-Speech and Speech-to-Text
+- [mlx-embeddings](https://github.com/Blaizzy/mlx-embeddings) — Text embeddings
+- [vLLM](https://github.com/vllm-project/vllm) — High-throughput LLM serving
+- [waybarrios/vllm-mlx](https://github.com/waybarrios/vllm-mlx) — Original project this work builds on
