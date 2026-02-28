@@ -3,9 +3,17 @@
 Utility functions for text processing and model detection.
 """
 
+import json
+import logging
 import re
+from functools import lru_cache
+from pathlib import Path
+
+from huggingface_hub import snapshot_download
 
 from .models import Message
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Special Token Patterns
@@ -134,13 +142,137 @@ MLLM_PATTERNS = [
     "DeepSeek-VL",  # DeepSeek-VL
 ]
 
+MLLM_METADATA_FILES = [
+    "config.json",
+    "processor_config.json",
+    "preprocessor_config.json",
+    "video_preprocessor_config.json",
+    "model.safetensors.index.json",
+]
 
-def is_mllm_model(model_name: str) -> bool:
+MLLM_CONFIG_KEYS = {
+    "vision_config",
+    "image_token_id",
+    "vision_start_token_id",
+    "vision_end_token_id",
+    "video_token_id",
+    "image_processor_type",
+    "video_processor_type",
+}
+
+MLLM_PROCESSOR_HINTS = (
+    "VL",
+    "Llava",
+    "Idefics",
+    "PaliGemma",
+    "Pixtral",
+    "Molmo",
+    "CogVLM",
+    "InternVL",
+    "MiniCPM",
+    "Florence",
+    "Vision",
+)
+
+MLLM_WEIGHT_PREFIXES = (
+    "vision_tower.",
+    "language_model.vision_tower.",
+    "vision_model.",
+    "visual.",
+    "multi_modal_projector.",
+    "image_newline.",
+)
+
+
+def _load_json_file(path: Path) -> dict | None:
+    """Best-effort JSON loader for model metadata files."""
+    try:
+        return json.loads(path.read_text())
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return None
+
+
+def _metadata_indicates_mllm(model_dir: Path) -> bool:
+    """Check local model metadata for multimodal markers."""
+    config = _load_json_file(model_dir / "config.json")
+    if isinstance(config, dict):
+        if any(key in config for key in MLLM_CONFIG_KEYS):
+            return True
+        architectures = config.get("architectures")
+        if isinstance(architectures, list) and any(
+            "ConditionalGeneration" in str(arch) for arch in architectures
+        ):
+            text_config = config.get("text_config")
+            if isinstance(text_config, dict) and "vision_config" in config:
+                return True
+
+    for name in (
+        "processor_config.json",
+        "preprocessor_config.json",
+        "video_preprocessor_config.json",
+    ):
+        processor_config = _load_json_file(model_dir / name)
+        if not isinstance(processor_config, dict):
+            continue
+        if any(key in processor_config for key in MLLM_CONFIG_KEYS):
+            return True
+        processor_class = processor_config.get("processor_class")
+        if isinstance(processor_class, str) and any(
+            hint in processor_class for hint in MLLM_PROCESSOR_HINTS
+        ):
+            return True
+
+    weights_index = _load_json_file(model_dir / "model.safetensors.index.json")
+    if isinstance(weights_index, dict):
+        weight_map = weights_index.get("weight_map")
+        if isinstance(weight_map, dict) and any(
+            str(key).startswith(prefix)
+            for key in weight_map
+            for prefix in MLLM_WEIGHT_PREFIXES
+        ):
+            return True
+
+    return False
+
+
+@lru_cache(maxsize=128)
+def _resolve_model_metadata_dir(model_name: str, offline: bool = False) -> Path | None:
+    """Resolve a model directory containing enough metadata for MLLM detection."""
+    model_path = Path(model_name).expanduser()
+    if model_path.exists():
+        return model_path if model_path.is_dir() else model_path.parent
+
+    try:
+        return Path(
+            snapshot_download(
+                model_name,
+                allow_patterns=MLLM_METADATA_FILES,
+                local_files_only=True,
+            )
+        )
+    except Exception:
+        if offline:
+            return None
+
+    try:
+        return Path(
+            snapshot_download(
+                model_name,
+                allow_patterns=MLLM_METADATA_FILES,
+            )
+        )
+    except Exception as exc:
+        logger.debug("MLLM metadata probe failed for %s: %s", model_name, exc)
+        return None
+
+
+def is_mllm_model(model_name: str, offline: bool = False) -> bool:
     """
     Check if model name indicates a multimodal language model.
 
     Args:
         model_name: HuggingFace model name or local path
+        offline: When True, only use local paths or cached metadata
 
     Returns:
         True if model is detected as MLLM/VLM
@@ -149,6 +281,11 @@ def is_mllm_model(model_name: str) -> bool:
     for pattern in MLLM_PATTERNS:
         if pattern.lower() in model_lower:
             return True
+
+    metadata_dir = _resolve_model_metadata_dir(model_name, offline=offline)
+    if metadata_dir is not None:
+        return _metadata_indicates_mllm(metadata_dir)
+
     return False
 
 

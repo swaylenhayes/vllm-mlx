@@ -6,10 +6,15 @@ Tests clean_output_text, is_mllm_model, and extract_multimodal_content
 from vllm_mlx/api/utils.py. No MLX dependency.
 """
 
+import json
+
+import pytest
+
 from vllm_mlx.api.models import ContentPart, ImageUrl, Message
 from vllm_mlx.api.utils import (
     MLLM_PATTERNS,
     SPECIAL_TOKENS_PATTERN,
+    _resolve_model_metadata_dir,
     _content_to_text,
     clean_output_text,
     extract_multimodal_content,
@@ -185,6 +190,70 @@ class TestIsMllmModel:
     def test_case_insensitive(self):
         assert is_mllm_model("LLAVA-7B") is True
         assert is_mllm_model("pixtral-12b") is True
+
+    def test_local_metadata_detects_multimodal_config(self, tmp_path):
+        config = {
+            "architectures": ["Qwen3_5ForConditionalGeneration"],
+            "vision_config": {"hidden_size": 1024},
+            "text_config": {"model_type": "qwen3_5_text"},
+        }
+        (tmp_path / "config.json").write_text(json.dumps(config))
+
+        assert is_mllm_model(str(tmp_path)) is True
+
+    def test_local_metadata_detects_multimodal_processor(self, tmp_path):
+        processor_config = {"processor_class": "Qwen3VLProcessor"}
+        (tmp_path / "processor_config.json").write_text(json.dumps(processor_config))
+
+        assert is_mllm_model(str(tmp_path)) is True
+
+    def test_local_metadata_detects_multimodal_weights(self, tmp_path):
+        weight_index = {
+            "weight_map": {
+                "language_model.vision_tower.blocks.0.attn.qkv.weight": "model.safetensors"
+            }
+        }
+        (tmp_path / "model.safetensors.index.json").write_text(json.dumps(weight_index))
+
+        assert is_mllm_model(str(tmp_path)) is True
+
+    def test_remote_metadata_probe_detects_multimodal_model(self, monkeypatch, tmp_path):
+        _resolve_model_metadata_dir.cache_clear()
+        (tmp_path / "preprocessor_config.json").write_text(
+            json.dumps({"processor_class": "Qwen3VLProcessor"})
+        )
+
+        calls = []
+
+        def fake_snapshot_download(model_name, allow_patterns=None, local_files_only=False):
+            calls.append(
+                {
+                    "model_name": model_name,
+                    "allow_patterns": allow_patterns,
+                    "local_files_only": local_files_only,
+                }
+            )
+            return str(tmp_path)
+
+        monkeypatch.setattr("vllm_mlx.api.utils.snapshot_download", fake_snapshot_download)
+
+        assert is_mllm_model("mlx-community/Qwen3.5-27B-4bit") is True
+        assert calls[0]["local_files_only"] is True
+        _resolve_model_metadata_dir.cache_clear()
+
+    def test_offline_remote_detection_does_not_fetch_network(self, monkeypatch):
+        _resolve_model_metadata_dir.cache_clear()
+        calls = []
+
+        def fake_snapshot_download(model_name, allow_patterns=None, local_files_only=False):
+            calls.append(local_files_only)
+            raise FileNotFoundError(model_name)
+
+        monkeypatch.setattr("vllm_mlx.api.utils.snapshot_download", fake_snapshot_download)
+
+        assert is_mllm_model("mlx-community/Qwen3.5-27B-4bit", offline=True) is False
+        assert calls == [True]
+        _resolve_model_metadata_dir.cache_clear()
 
     def test_backwards_compatibility_alias(self):
         assert is_vlm_model is is_mllm_model

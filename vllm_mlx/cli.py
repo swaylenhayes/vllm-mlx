@@ -441,7 +441,7 @@ def serve_command(args):
     ensure_model_downloaded(
         args.model,
         config=download_config,
-        is_mllm=is_mllm_model(args.model),
+        is_mllm=is_mllm_model(args.model, offline=getattr(args, "offline", False)),
     )
 
     print(f"Loading model: {args.model}")
