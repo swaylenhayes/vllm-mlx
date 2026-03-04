@@ -16,11 +16,36 @@ This project builds on [waybarrios/vllm-mlx](https://github.com/waybarrios/vllm-
 | **Performance** | `+50.25%` token throughput vs upstream baseline | Measurably faster local serving on Apple Silicon |
 | **Client compatibility** | Goose and Open WebUI evidence-backed; Jan and AnythingLLM queued next | Real tools connect today without guessing the backend contract |
 | **Tool reliability** | Thinking-model tools: `6/9 -> 9/9`. MLLM tools: `0/9 -> 9/9` | Agent workflows that previously failed now work |
+| **Model compatibility** | Qwen3.5 `4B` / `9B` validated in `4-bit` and `8-bit` | Current trending Qwen family runs on the fork today |
 | **Serving ergonomics** | Validated profiles for text, deterministic, tools, JSON, and multimodal | Shorter path from clone to working backend |
 | **Runtime controls** | Divergence monitoring, strict model id, `frequency_penalty`, `enable_thinking` | Better debugging and safer correctness-sensitive operation |
 | **Upstream leverage** | Useful upstream fixes integrated; fork-side hardening ships faster | Faster iteration without cutting off upstream value |
 
 Benchmarked on Apple Silicon using `mlx-community/Qwen3-0.6B-8bit`. Full configuration appears in [Detailed Benchmarks And Validation](#detailed-benchmarks-and-validation).
+
+## Compatibility Highlights
+
+Confirmed on the current repo checkout:
+
+- `mlx-community/Qwen3.5-4B-4bit`
+- `mlx-community/Qwen3.5-4B-8bit`
+- `mlx-community/Qwen3.5-9B-4bit`
+- `mlx-community/Qwen3.5-9B-8bit`
+
+Validated behaviors on the Qwen3.5 family:
+
+- server startup
+- `/health`
+- `/v1/models`
+- text-only chat
+- multimodal chat
+- structured output / JSON-schema with safe default handling when `enable_thinking` is omitted
+
+Recommended first profile:
+
+```bash
+scripts/serve_profile.sh mllm-default mlx-community/Qwen3.5-4B-4bit
+```
 
 ## Quick Start
 
@@ -81,7 +106,7 @@ Details: [Client Compatibility Guide](docs/guides/client-compatibility.md) · [C
 
 **Observability and control.** Divergence monitoring with confidence intervals, strict model-id enforcement, request-level reasoning control, and `frequency_penalty` mapping.
 
-**Stronger tool and multimodal support.** Tool-calling reliability improvements across thinking models and VLMs, metadata-based multimodal detection, and proprietary format parser support (`LiquidAI` / `WaveCut`).
+**Stronger tool and multimodal support.** Tool-calling reliability improvements across thinking models and VLMs, metadata-based multimodal detection, validated Qwen3.5 family support, and proprietary format parser support (`LiquidAI` / `WaveCut`).
 
 **Selective upstream sync.** Upstream fixes are integrated where they help. Missing features and hardening ship faster on the fork side.
 

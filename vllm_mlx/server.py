@@ -676,6 +676,22 @@ def _build_engine_thinking_kwargs(request_value: int | None) -> dict[str, Any]:
     }
 
 
+def _resolve_enable_thinking(request: ChatCompletionRequest) -> bool | None:
+    """
+    Resolve request-level thinking behavior.
+
+    Policy:
+    - explicit request value always wins
+    - structured output defaults to non-thinking when omitted
+    - plain chat keeps model/template defaults when omitted
+    """
+    if request.enable_thinking is not None:
+        return request.enable_thinking
+    if request.response_format is not None:
+        return False
+    return None
+
+
 def _get_text_tokenizer() -> Any | None:
     """Return a tokenizer with encode/decode if available."""
     if _engine is None:
@@ -3450,10 +3466,12 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
             last_user_preview = content[:300]
     has_tools = bool(request.tools)
     n_tools = len(request.tools) if request.tools else 0
+    resolved_enable_thinking = _resolve_enable_thinking(request)
     logger.info(
         f"[REQUEST] POST /v1/chat/completions stream={request.stream} "
         f"model={request.model!r} max_tokens={request.max_tokens} "
         f"temp={request.temperature} enable_thinking={request.enable_thinking} "
+        f"resolved_enable_thinking={resolved_enable_thinking} "
         f"msgs={n_msgs} roles={msg_roles} "
         f"total_chars={total_chars} tools={n_tools} "
         f"response_format={request.response_format}"
@@ -3525,8 +3543,8 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
     )
     if repetition_penalty is not None:
         chat_kwargs["repetition_penalty"] = repetition_penalty
-    if request.enable_thinking is not None:
-        chat_kwargs["enable_thinking"] = request.enable_thinking
+    if resolved_enable_thinking is not None:
+        chat_kwargs["enable_thinking"] = resolved_enable_thinking
     chat_kwargs.update(_build_engine_thinking_kwargs(request.max_thinking_tokens))
 
     # Add multimodal content

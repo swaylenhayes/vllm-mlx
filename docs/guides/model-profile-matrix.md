@@ -12,8 +12,16 @@ Important rules:
 - for fair comparisons, keep the serve profile fixed and vary only the request
   payload
 - `enable_thinking` is a request field, not a serve flag
-- multimodal `enable_thinking` behavior remains template-dependent even though
-  the backend now forwards it
+- omitted `enable_thinking` now auto-resolves to `false` for structured-output
+  requests while plain chat keeps model/template defaults
+
+## Compatibility Highlights
+
+Fresh validated Qwen3.5 checkpoints on the repo checkout:
+
+| Family | Checkpoints validated | Notes |
+|---|---|---|
+| Qwen3.5 multimodal | `Qwen3.5-4B-4bit`, `Qwen3.5-4B-8bit`, `Qwen3.5-9B-4bit`, `Qwen3.5-9B-8bit` | Startup, health, model listing, text chat, multimodal chat, and JSON-schema sanity validated |
 
 ## Quick Picks
 
@@ -23,6 +31,7 @@ Important rules:
 | Repro or bug triage | Qwen3 text instruct models | `text-deterministic` | Greedy sampling and serialized tracked routes |
 | Tool-calling | Qwen3 text instruct or validated tool-friendly models | `text-tools` | Keeps tool parser setup explicit |
 | JSON extraction | Qwen3 text instruct / MoE instruct models | `text-json` | Long timeout and stable text-only extraction profile |
+| Trending multimodal Qwen | Qwen3.5 `4B` / `9B` | `mllm-default` | Newly validated family with strong mixed text+image behavior |
 | Image or mixed image+text chat | Qwen3-VL family and similar MLLMs | `mllm-default` | Simple runtime avoids extra batching noise |
 | Correctness-sensitive multimodal concurrency | Qwen3-VL family and similar MLLMs | `mllm-correctness` | Divergence monitor plus serialize fallback |
 
@@ -37,7 +46,7 @@ yet proven its exact setting serialization behavior.
 | Tool-capable terminal agent | `text-tools` or `goose-tools` | Validated Qwen3 text instruct | Send `tools` and `tool_choice` explicitly | Goose tool path is evidence-backed |
 | Deterministic repro or bug triage | `text-deterministic` | Qwen3 text instruct | Force `temperature=0.0`, `top_p=1.0`, fixed prompts | Use when repeatability matters more than throughput |
 | JSON extraction or structured output | `text-json` | Qwen3 text or MoE instruct | Prefer schema or `json_object`; keep prompt stable | Best first stop for strict extraction work |
-| Multimodal client validation | `mllm-default` or `generic-mllm` | Qwen3-VL family | Start with `temperature=0.0`, `top_p=1.0`, `enable_thinking=false` when exposed | Backend profile is ready; client upload path still needs client-specific proof |
+| Multimodal client validation | `mllm-default` or `generic-mllm` | Qwen3-VL and Qwen3.5 families | Start with `temperature=0.0`, `top_p=1.0`; structured-output requests now auto-disable thinking when omitted | Backend profile is ready; client upload path still needs client-specific proof |
 
 Current public client-validation boundary:
 - Goose and Open WebUI are the current evidence-backed public rows
@@ -58,6 +67,7 @@ Examples:
 scripts/serve_profile.sh text-default mlx-community/Qwen3-4B-Instruct-2507-4bit
 scripts/serve_profile.sh text-json mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit
 scripts/serve_profile.sh mllm-default mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit
+scripts/serve_profile.sh mllm-default mlx-community/Qwen3.5-4B-4bit
 ```
 
 ## Detailed Matrix
@@ -92,6 +102,8 @@ Current practical interpretation:
 - text chat paths now honor request-level `enable_thinking`
 - multimodal chat paths now receive the same flag, but the model template must
   actually respect it
+- if a request asks for `json_object` or `json_schema` and omits
+  `enable_thinking`, the server now defaults that request to non-thinking mode
 - if you are comparing thinking vs non-thinking behavior, do not change the
   serve profile between runs
 

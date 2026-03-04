@@ -32,6 +32,7 @@ Browse thousands of pre-optimized models at: **https://huggingface.co/mlx-commun
 
 | Model Family | Example Models |
 |--------------|----------------|
+| **Qwen3.5** | `Qwen3.5-4B-4bit`, `Qwen3.5-4B-8bit`, `Qwen3.5-9B-4bit`, `Qwen3.5-9B-8bit` |
 | **Qwen-VL** | `Qwen3-VL-4B-Instruct-3bit`, `Qwen3-VL-8B-Instruct-4bit`, `Qwen2-VL-2B/7B-Instruct-4bit` |
 | **LLaVA** | `llava-1.5-7b-4bit`, `llava-v1.6-mistral-7b-4bit`, `llava-llama-3-8b-v1_1-4bit` |
 | **Idefics** | `Idefics3-8B-Llama3-4bit`, `idefics2-8b-4bit` |
@@ -45,9 +46,28 @@ Browse thousands of pre-optimized models at: **https://huggingface.co/mlx-commun
 
 | Use Case | Model | Memory |
 |----------|-------|--------|
+| Trending / current Qwen family | `mlx-community/Qwen3.5-4B-4bit` | ~3.1 GB |
 | Fast/Light | `mlx-community/Qwen3-VL-4B-Instruct-3bit` | ~3 GB |
 | Balanced | `mlx-community/Qwen3-VL-8B-Instruct-4bit` | ~6 GB |
 | Quality | `mlx-community/Qwen3-VL-30B-A3B-Instruct-6bit` | ~20 GB |
+
+### Fresh Validation Notes
+
+Recent repo-checkout validation confirms these Qwen3.5 checkpoints as compatible:
+
+- `mlx-community/Qwen3.5-4B-4bit`
+- `mlx-community/Qwen3.5-4B-8bit`
+- `mlx-community/Qwen3.5-9B-4bit`
+- `mlx-community/Qwen3.5-9B-8bit`
+
+Validation covered:
+
+- model detection
+- server startup
+- health/model listing
+- text-only chat
+- multimodal chat
+- structured output with JSON-schema
 
 ## Embedding Models (via mlx-embeddings)
 
