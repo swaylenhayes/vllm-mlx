@@ -1,0 +1,31 @@
+{
+  "asset_id": "benchmark-delta-phase-p1",
+  "title": "Published Throughput Snapshot",
+  "subtitle": "Current fork throughput is +50.25% higher than the upstream baseline on this published workload.",
+  "workload": {
+    "model": "mlx-community/Qwen3-0.6B-8bit",
+    "prompts": 10,
+    "max_tokens": 64,
+    "date": "2026-02-24"
+  },
+  "series": [
+    {
+      "label": "Upstream baseline",
+      "commit": "1fd1c9a",
+      "throughput_tok_s": 366.22
+    },
+    {
+      "label": "Early fork hardening",
+      "commit": "a00ec35",
+      "throughput_tok_s": 541.06
+    },
+    {
+      "label": "Current published fork",
+      "commit": "26b143b",
+      "throughput_tok_s": 550.25
+    }
+  ],
+  "delta_vs_upstream_pct": 50.25,
+  "caption": "Published benchmark snapshot: current fork throughput is +50.25% higher than the upstream baseline on this workload.",
+  "alt_text": "Horizontal bar chart comparing upstream baseline, early fork hardening, and current published fork throughput, with the current fork shown at 550.25 tok/s and a +50.25% delta versus upstream."
+}

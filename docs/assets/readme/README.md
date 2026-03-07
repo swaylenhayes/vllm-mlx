@@ -7,6 +7,8 @@ Planned assets:
 
 - `benchmark-delta-phase-p1.svg`
   - compact benchmark delta card for upstream vs P0 vs P1
+  - source data:
+    - `benchmark-delta-phase-p1-source.json`
 - `compatibility-snapshot.svg`
   - compact compatibility wins panel
 - `operator-quickstart-flow.svg`
@@ -30,4 +32,5 @@ Current status:
 
 - scaffold only
 - no image assets published yet
-
+- benchmark hero source data file created:
+  - `benchmark-delta-phase-p1-source.json`

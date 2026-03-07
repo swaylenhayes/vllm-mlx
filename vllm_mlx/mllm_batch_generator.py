@@ -233,6 +233,85 @@ def _make_batch_cache(model: nn.Module, left_padding: List[int]) -> List[Any]:
         return [BatchKVCache(left_padding) for _ in model.layers]
 
 
+def _merge_prefill_caches(per_request_caches: List[List[Any]]) -> List[Any]:
+    """Merge per-request prompt caches into a batched cache list.
+
+    Multimodal-capable language models may use hybrid cache stacks where some
+    layers are standard attention `KVCache` and others are recurrent/stateful
+    cache types such as `ArraysCache`. As long as each layer object exposes a
+    compatible `merge()` implementation, we can batch them together for the
+    generation phase.
+    """
+
+    if not per_request_caches:
+        return []
+
+    merged_cache = []
+    num_layers = len(per_request_caches[0])
+
+    for layer_idx in range(num_layers):
+        layer_caches = [cache[layer_idx] for cache in per_request_caches]
+        representative = layer_caches[0]
+        if representative is None or not hasattr(representative, "merge"):
+            raise ValueError(
+                "MLLM continuous batching requires merge-capable prompt caches, "
+                f"but layer {layer_idx} produced "
+                f"{type(representative).__name__}."
+            )
+
+        try:
+            merged_cache.append(representative.merge(layer_caches))
+        except Exception as exc:
+            raise ValueError(
+                "Failed to merge multimodal prompt caches for continuous batching "
+                f"at layer {layer_idx} ({type(representative).__name__}): {exc}"
+            ) from exc
+
+    return merged_cache
+
+
+class _ScalarOffsetCacheView:
+    """Proxy batched caches with vector offsets as scalar-friendly views.
+
+    Some mlx-vlm MLLM attention implementations assume `cache.offset` is usable
+    as a Python slice bound during generation. `BatchKVCache` stores per-row
+    offsets as an `mx.array`, which is correct for the cache itself but not
+    slice-safe for those model implementations. This proxy preserves the real
+    batched cache object for updates/extraction while exposing a scalar offset
+    derived from the active batched length.
+    """
+
+    def __init__(self, cache: Any):
+        self._cache = cache
+
+    @property
+    def offset(self):
+        offset = getattr(self._cache, "offset", None)
+        if isinstance(offset, mx.array):
+            if offset.ndim == 0:
+                return offset.item()
+            if hasattr(self._cache, "_idx"):
+                return int(self._cache._idx)
+            return int(mx.max(offset).item())
+        return offset
+
+    def __getattr__(self, name: str):
+        return getattr(self._cache, name)
+
+
+def _normalize_generation_caches(batch_cache: List[Any]) -> List[Any]:
+    """Wrap caches that need scalar offset views during generation."""
+
+    normalized = []
+    for cache in batch_cache:
+        offset = getattr(cache, "offset", None)
+        if isinstance(offset, mx.array) and offset.ndim > 0:
+            normalized.append(_ScalarOffsetCacheView(cache))
+        else:
+            normalized.append(cache)
+    return normalized
+
+
 def _left_pad_prompts(
     prompts: List[List[int]], max_length: Optional[int] = None
 ) -> mx.array:
@@ -662,30 +741,16 @@ class MLLMBatchGenerator:
 
             per_request_caches.append(request_cache)
 
-        # Merge per-request KVCaches into a single BatchKVCache.
-        # KVCache.merge() creates a BatchKVCache with proper left-padding
-        # alignment, so all requests share a single batched cache for
-        # subsequent generation steps.
-        from mlx_lm.models.cache import KVCache
-
-        sample_cache = per_request_caches[0][0]
-        if not isinstance(sample_cache, KVCache):
-            raise ValueError(
-                f"MLLM continuous batching requires standard KVCache but got "
-                f"{type(sample_cache).__name__}. Disable --kv-cache-quantization "
-                f"when using multimodal models with --continuous-batching."
-            )
-
+        # Merge per-request prompt caches into batch-aware caches for the
+        # subsequent generation phase. Hybrid models may mix attention KV
+        # caches with recurrent state caches across layers.
         try:
-            batch_cache = [
-                per_request_caches[0][layer_idx].merge(
-                    [c[layer_idx] for c in per_request_caches]
-                )
-                for layer_idx in range(len(per_request_caches[0]))
-            ]
+            batch_cache = _normalize_generation_caches(
+                _merge_prefill_caches(per_request_caches)
+            )
         except Exception as e:
             logger.error(
-                f"Failed to merge per-request KV caches: {type(e).__name__}: {e}"
+                f"Failed to merge per-request prompt caches: {type(e).__name__}: {e}"
             )
             raise
 

@@ -190,6 +190,61 @@ class TestMLLMBatch:
         assert batch.request_ids == ["req-1", "req-3"]
 
 
+class TestMLLMPrefillCacheMerge:
+    """Regression tests for hybrid MLLM prompt-cache merging."""
+
+    def test_merge_prefill_caches_supports_hybrid_layers(self):
+        from mlx_lm.models.cache import ArraysCache
+        from vllm_mlx.mllm_batch_generator import _merge_prefill_caches
+
+        class FakeKVLikeCache:
+            def __init__(self, value):
+                self.value = value
+
+            @classmethod
+            def merge(cls, caches):
+                merged = cls(None)
+                merged.value = mx.concatenate([cache.value for cache in caches], axis=0)
+                return merged
+
+        def make_arrays(value: float):
+            cache = mx.array([[value, value + 1]])
+            arrays = ArraysCache(1)
+            arrays[0] = cache
+            return arrays
+
+        caches = [
+            [make_arrays(1.0), FakeKVLikeCache(mx.array([[10.0]]))],
+            [make_arrays(2.0), FakeKVLikeCache(mx.array([[20.0]]))],
+        ]
+
+        merged = _merge_prefill_caches(caches)
+
+        assert len(merged) == 2
+        assert merged[0].cache[0].shape == (2, 2)
+        assert merged[0].cache[0].tolist() == [[1.0, 2.0], [2.0, 3.0]]
+        assert merged[1].value.tolist() == [[10.0], [20.0]]
+
+    def test_merge_prefill_caches_rejects_non_mergeable_layers(self):
+        from vllm_mlx.mllm_batch_generator import _merge_prefill_caches
+
+        with pytest.raises(ValueError, match="merge-capable prompt caches"):
+            _merge_prefill_caches([[object()], [object()]])
+
+    def test_normalize_generation_caches_wraps_vector_offsets(self):
+        from vllm_mlx.mllm_batch_generator import _normalize_generation_caches
+
+        class FakeBatchCache:
+            def __init__(self):
+                self.offset = mx.array([4, 6], dtype=mx.int32)
+                self._idx = 6
+
+        wrapped = _normalize_generation_caches([FakeBatchCache()])
+
+        assert len(wrapped) == 1
+        assert wrapped[0].offset == 6
+
+
 class TestMLLMBatchStats:
     """Tests for MLLMBatchStats."""
 

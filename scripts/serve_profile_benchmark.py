@@ -25,47 +25,80 @@ DEFAULT_PROMPTS = [
 ]
 
 
+def _load_prompts(path: str | None) -> list[str]:
+    if not path:
+        return list(DEFAULT_PROMPTS)
+    prompt_path = Path(path)
+    lines = [line.strip() for line in prompt_path.read_text(encoding="utf-8").splitlines()]
+    prompts = [line for line in lines if line]
+    if not prompts:
+        raise ValueError(f"No prompts found in {prompt_path}")
+    return prompts
+
+
 def _call_chat(
     *,
     base_url: str,
     model: str,
     prompt: str,
     max_tokens: int,
+    temperature: float,
+    top_p: float,
     timeout: float,
 ) -> dict:
+    started = time.perf_counter()
     response = requests.post(
         f"{base_url.rstrip('/')}/v1/chat/completions",
         json={
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens,
-            "temperature": 0.7,
+            "temperature": temperature,
+            "top_p": top_p,
         },
         timeout=timeout,
     )
+    latency_s = time.perf_counter() - started
     response.raise_for_status()
     payload = response.json()
     usage = payload.get("usage") or {}
     return {
         "prompt": prompt,
+        "latency_s": round(latency_s, 4),
         "prompt_tokens": int(usage.get("prompt_tokens") or 0),
         "completion_tokens": int(usage.get("completion_tokens") or 0),
         "total_tokens": int(usage.get("total_tokens") or 0),
     }
 
 
+def _is_ready_response(response: requests.Response) -> bool:
+    if not response.ok:
+        return False
+    try:
+        payload = response.json()
+    except ValueError:
+        return False
+    if payload.get("status") == "healthy":
+        return True
+    if payload.get("object") == "list" and isinstance(payload.get("data"), list):
+        return True
+    return False
+
+
 def _wait_for_health(base_url: str, timeout_s: float) -> None:
     deadline = time.time() + timeout_s
-    health_url = f"{base_url.rstrip('/')}/health"
+    probe_urls = [
+        f"{base_url.rstrip('/')}/health",
+        f"{base_url.rstrip('/')}/v1/models",
+    ]
     while time.time() < deadline:
-        try:
-            response = requests.get(health_url, timeout=2.0)
-            if response.ok:
-                payload = response.json()
-                if payload.get("status") == "healthy":
+        for probe_url in probe_urls:
+            try:
+                response = requests.get(probe_url, timeout=2.0)
+                if _is_ready_response(response):
                     return
-        except requests.RequestException:
-            pass
+            except requests.RequestException:
+                pass
         time.sleep(0.5)
     raise TimeoutError(f"Server health check did not pass within {timeout_s:.1f}s")
 
@@ -76,13 +109,31 @@ def main() -> int:
     parser.add_argument("--model", required=True)
     parser.add_argument("--max-tokens", type=int, default=64)
     parser.add_argument("--concurrency", type=int, default=10)
+    parser.add_argument("--prompts-file")
+    parser.add_argument("--temperature", type=float, default=0.7)
+    parser.add_argument("--top-p", type=float, default=1.0)
+    parser.add_argument("--warmup-requests", type=int, default=0)
     parser.add_argument("--request-timeout", type=float, default=180.0)
     parser.add_argument("--health-timeout", type=float, default=120.0)
     parser.add_argument("--json-out")
     args = parser.parse_args()
 
-    prompts = list(DEFAULT_PROMPTS)
+    prompts = _load_prompts(args.prompts_file)
     _wait_for_health(args.base_url, args.health_timeout)
+
+    # Warm the active model and server path before collecting timed results.
+    if prompts and args.warmup_requests > 0:
+        warmup_prompt = prompts[0]
+        for _ in range(args.warmup_requests):
+            _call_chat(
+                base_url=args.base_url,
+                model=args.model,
+                prompt=warmup_prompt,
+                max_tokens=args.max_tokens,
+                temperature=args.temperature,
+                top_p=args.top_p,
+                timeout=args.request_timeout,
+            )
 
     started = time.perf_counter()
     results: list[dict] = []
@@ -95,6 +146,8 @@ def main() -> int:
                 model=args.model,
                 prompt=prompt,
                 max_tokens=args.max_tokens,
+                temperature=args.temperature,
+                top_p=args.top_p,
                 timeout=args.request_timeout,
             )
             for prompt in prompts
@@ -118,8 +171,12 @@ def main() -> int:
         "throughput_tok_per_s": round(total_tokens / total_time, 4),
         "max_tokens": args.max_tokens,
         "concurrency": args.concurrency,
+        "temperature": args.temperature,
+        "top_p": args.top_p,
+        "warmup_requests": args.warmup_requests,
         "model": args.model,
         "base_url": args.base_url,
+        "prompts_file": args.prompts_file,
     }
 
     print("Results:")
@@ -135,6 +192,7 @@ def main() -> int:
     if args.json_out:
         out_path = Path(args.json_out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
+        summary["request_results"] = sorted(results, key=lambda item: item["prompt"])
         out_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
         print(f"Wrote JSON report: {out_path}")
 
