@@ -98,3 +98,9 @@ benchmarks/phase-results/_scratch/
 
 # MLX cache
 .mlx_cache/
+
+# Internal operator workspace artifacts
+_docs/
+_private/
+.sediment/
+.webui_secret_key
