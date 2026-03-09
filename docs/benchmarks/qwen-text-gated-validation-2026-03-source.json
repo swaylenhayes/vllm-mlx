@@ -1,13 +1,13 @@
 {
   "report_id": "qwen-text-gated-validation-2026-03",
-  "generated_at_utc": "2026-03-09T06:58:57Z",
+  "generated_at_utc": "2026-03-09T10:58:10Z",
   "method": {
     "gating": "Tier 0 + Tier 1 diagnostic gate before benchmark run",
     "benchmark_workloads": {
       "throughput": "10 text prompts, max_tokens=64, concurrency=10, warmup=2",
       "streaming": "3 prompts x 5 iterations, max_tokens=64, warmup=1"
     },
-    "sampling": "2 independent gated passes per model in this snapshot",
+    "sampling": "3 independent gated passes per model in this snapshot",
     "admission_standard": {
       "minimum_passes_baseline": 2,
       "minimum_passes_release_grade": 3,
@@ -23,6 +23,10 @@
       ],
       "periodic_qualifier": [
         "T1.2 reference divergence should be run periodically per model family/quantization class"
+      ],
+      "periodic_qualifier_status": [
+        "Attempted on 2026-03-09 with reference dependencies enabled",
+        "Blocked for current MLX quantized checkpoints by transformers quantization-config incompatibility (missing quant_method)"
       ]
     }
   },
@@ -59,28 +63,43 @@
           "stream_toks_per_s": 52.7035,
           "stream_itl_ms_mean": 15.2704,
           "stream_total_time_ms_mean": 1208.0152
+        },
+        {
+          "id": "qwen3-8b-4bit-pass3",
+          "gate_should_continue_t0": true,
+          "gate_should_continue_t1": true,
+          "determinism_status": "PASS",
+          "determinism_agreement": 1.0,
+          "perplexity_status": "PASS",
+          "perplexity": 2.244749087691627,
+          "throughput_toks_per_s": 52.3353,
+          "throughput_prompts_per_s": 0.8177,
+          "stream_ttft_ms_mean": 275.9047,
+          "stream_toks_per_s": 47.5924,
+          "stream_itl_ms_mean": 16.6661,
+          "stream_total_time_ms_mean": 1337.7478
         }
       ],
       "aggregate": {
         "throughput_toks_per_s_mean_sd_cv": [
-          54.8177,
-          0.1684,
-          0.31
+          53.9902,
+          1.4382,
+          2.66
         ],
         "throughput_prompts_per_s_mean_sd_cv": [
-          0.8566,
-          0.0026,
-          0.31
+          0.8436,
+          0.0225,
+          2.67
         ],
         "stream_ttft_ms_mean_sd_cv": [
-          227.4716,
-          13.7817,
-          6.06
+          243.6159,
+          29.6124,
+          12.16
         ],
         "stream_toks_per_s_mean_sd_cv": [
-          53.7619,
-          1.4968,
-          2.78
+          51.7054,
+          3.7159,
+          7.19
         ],
         "perplexity_mean_sd_cv": [
           2.2447,
@@ -122,28 +141,43 @@
           "stream_toks_per_s": 50.5612,
           "stream_itl_ms_mean": 13.3831,
           "stream_total_time_ms_mean": 606.5253
+        },
+        {
+          "id": "qwen3-30b-a3b-4bit-pass3",
+          "gate_should_continue_t0": true,
+          "gate_should_continue_t1": true,
+          "determinism_status": "PASS",
+          "determinism_agreement": 1.0,
+          "perplexity_status": "PASS",
+          "perplexity": 2.1927495310818794,
+          "throughput_toks_per_s": 49.455,
+          "throughput_prompts_per_s": 1.5032,
+          "stream_ttft_ms_mean": 204.8598,
+          "stream_toks_per_s": 48.1404,
+          "stream_itl_ms_mean": 13.9927,
+          "stream_total_time_ms_mean": 637.025
         }
       ],
       "aggregate": {
         "throughput_toks_per_s_mean_sd_cv": [
-          52.5461,
-          1.026,
-          1.95
+          51.5157,
+          1.9265,
+          3.74
         ],
         "throughput_prompts_per_s_mean_sd_cv": [
-          1.5972,
-          0.0312,
-          1.95
+          1.5658,
+          0.0586,
+          3.74
         ],
         "stream_ttft_ms_mean_sd_cv": [
-          195.2259,
-          2.6399,
-          1.35
+          198.4372,
+          5.867,
+          2.96
         ],
         "stream_toks_per_s_mean_sd_cv": [
-          50.6534,
-          0.1304,
-          0.26
+          49.8157,
+          1.4538,
+          2.92
         ],
         "perplexity_mean_sd_cv": [
           2.1927,
