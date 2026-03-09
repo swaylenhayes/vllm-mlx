@@ -7,18 +7,22 @@
       "throughput": "10 text prompts, max_tokens=64, concurrency=10, warmup=2",
       "streaming": "3 prompts x 5 iterations, max_tokens=64, warmup=1"
     },
-    "sampling": "2 independent gated passes per model",
+    "sampling": "2 independent gated passes per model in this snapshot",
     "admission_standard": {
-      "minimum_passes": 2,
+      "minimum_passes_baseline": 2,
+      "minimum_passes_release_grade": 3,
       "required_gate_conditions": [
         "t0_should_continue=true",
         "t1_should_continue=true",
         "T1.1=PASS",
         "T1.3=PASS"
       ],
-      "escalate_to_3_passes_when": [
+      "escalate_to_4_passes_when_after_pass_3": [
         "throughput_tok/s CV > 10%",
         "streaming_TTFT CV > 15%"
+      ],
+      "periodic_qualifier": [
+        "T1.2 reference divergence should be run periodically per model family/quantization class"
       ]
     }
   },

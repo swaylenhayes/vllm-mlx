@@ -1,18 +1,20 @@
 # Qwen Text Models: Gated Validation Snapshot (March 2026)
 
-This report summarizes two independent pre-gated benchmark passes for text-only Qwen models on Apple Silicon.
+This report summarizes two independent diagnostic-gated benchmark passes for text-only Qwen models on Apple Silicon.
 
 ## Validation Standard Used
 
-- Minimum for model inclusion in the validated list: `2` gated passes.
+- Baseline admission tier: minimum `2` gated passes.
+- Release-grade tier: minimum `3` gated passes.
 - Required gate outcomes on each pass:
   - Tier 0 `should_continue=true`
   - Tier 1 `should_continue=true`
   - Determinism check `T1.1=PASS`
   - Quant quality check `T1.3=PASS`
-- Escalation rule: run a 3rd pass if either:
+- Auto-escalation rule: run a 4th pass if either metric remains above threshold after pass 3:
   - throughput token/s coefficient of variation (CV) > `10%`, or
   - streaming TTFT CV > `15%`.
+- Periodic qualifier: run reference-divergence check `T1.2` on a recurring basis for each model family/quantization class (not required on every individual pass).
 
 ## Models Included
 
@@ -40,7 +42,7 @@ This report summarizes two independent pre-gated benchmark passes for text-only 
 ## Notes
 
 - These are diagnostic-gated validation runs captured for reproducibility.
-- Reference-divergence check `T1.2` is currently skipped in this environment because optional reference dependencies are not installed.
+- Reference-divergence check `T1.2` is skipped in this environment because optional reference dependencies are not installed. It remains tracked as a periodic qualifier.
 - Full provenance bundles (raw gate output, server logs, and raw benchmark JSON) are retained in internal artifacts.
 
 Source data: [qwen-text-gated-validation-2026-03-source.json](qwen-text-gated-validation-2026-03-source.json)

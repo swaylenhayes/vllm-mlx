@@ -7,7 +7,7 @@ Performance benchmarks for vllm-mlx on Apple Silicon.
 - [LLM Benchmarks](llm.md) - Text generation performance
 - [Image Benchmarks](image.md) - Image understanding performance
 - [Video Benchmarks](video.md) - Video understanding performance
-- [Qwen Text Gated Validation (March 2026)](qwen-text-gated-validation-2026-03.md) - Two-pass gated validation snapshot and model-admission standard
+- [Qwen Text Gated Validation (March 2026)](qwen-text-gated-validation-2026-03.md) - Tiered gated validation snapshot (baseline + release-grade policy)
 - [Fork Benefits](fork-benefits.md) - Compatibility and reliability outcomes from fork changes
 - [Fork Improvement Log](fork-improvement-log.md) - Append-only measured improvement history and template
 

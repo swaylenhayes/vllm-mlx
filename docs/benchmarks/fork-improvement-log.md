@@ -216,7 +216,7 @@ Rules:
   - Validation currently covers two Qwen-family VLMs; other model families may require parser/profile tuning.
   - Mixed image+tool engine behavior is correct; argument quality remains model-dependent.
 - Links:
-  - Validation source: local workspace spec `i7-validation-results-2026-02-25.md`
+  - Validation source: internal runbook notes (private)
   - Compatibility detail: [`fork-benefits.md`](fork-benefits.md)
 
 ### 2026-02-25 - `05869bc` (I6 validation sweep on latest branch state `219cfda`)
@@ -259,7 +259,7 @@ Rules:
   - I6 mitigation runs after tool calls are emitted; it cannot by itself explain failures where no tool calls are produced.
   - Single-shot results on 1.2B-3B models are unstable; repeated-run methodology is recommended.
 - Links:
-  - Validation source: local workspace spec `i6-validation-results-2026-02-25.md`
+  - Validation source: internal runbook notes (private)
   - Compatibility detail: [`fork-benefits.md`](fork-benefits.md)
 
 ### 2026-02-25 - `9c07636` (P1.10 validation sweep)
@@ -300,7 +300,7 @@ Rules:
   - Some budget/model combinations produce tool-call spray (13-15 redundant calls) despite passing score checks.
   - Engine-level forcing is on `SimpleEngine` LLM path; other paths keep API-layer budget behavior.
 - Links:
-  - Validation source: local workspace specs note (2026-02-25)
+  - Validation source: internal runbook notes (private)
   - Compatibility detail: [`fork-benefits.md`](fork-benefits.md)
 
 ### 2026-02-24 - `d890ef6` (thinking-model validation pass)
@@ -335,7 +335,7 @@ Rules:
   - All three models failed the same ambiguous file-search probe in this set (`6/9` ceiling).
   - Interpreted as probe/model-capacity limitation at this scale, not parser extraction failure.
 - Links:
-  - Validation summary source: local workspace specs note (2026-02-24)
+  - Validation summary source: internal runbook notes (private)
   - Prior compatibility overview: [`fork-benefits.md`](fork-benefits.md)
 
 ### 2026-02-24 - `d890ef6`

@@ -60,8 +60,7 @@ Why Goose is still overall `conditional`:
 
 Backing evidence:
 
-- `_docs/exports/goose-vllm-mlx-validation-2026-02-28/artifacts/summary.md`
-- `_docs/exports/open-webui-vllm-mlx-validation-2026-02-28/artifacts/summary.md`
+- Validation runs are evidence-backed and archived in internal run artifacts used to populate this table.
 
 ## Validation Queue
 
