@@ -1,0 +1,153 @@
+{
+  "report_id": "qwen-text-gated-validation-2026-03",
+  "generated_at_utc": "2026-03-09T06:58:57Z",
+  "method": {
+    "gating": "Tier 0 + Tier 1 diagnostic gate before benchmark run",
+    "benchmark_workloads": {
+      "throughput": "10 text prompts, max_tokens=64, concurrency=10, warmup=2",
+      "streaming": "3 prompts x 5 iterations, max_tokens=64, warmup=1"
+    },
+    "sampling": "2 independent gated passes per model",
+    "admission_standard": {
+      "minimum_passes": 2,
+      "required_gate_conditions": [
+        "t0_should_continue=true",
+        "t1_should_continue=true",
+        "T1.1=PASS",
+        "T1.3=PASS"
+      ],
+      "escalate_to_3_passes_when": [
+        "throughput_tok/s CV > 10%",
+        "streaming_TTFT CV > 15%"
+      ]
+    }
+  },
+  "models": [
+    {
+      "model": "Qwen3-8B-4bit",
+      "passes": [
+        {
+          "id": "qwen3-8b-4bit-pass1",
+          "gate_should_continue_t0": true,
+          "gate_should_continue_t1": true,
+          "determinism_status": "PASS",
+          "determinism_agreement": 1.0,
+          "perplexity_status": "PASS",
+          "perplexity": 2.244749087691627,
+          "throughput_toks_per_s": 54.6986,
+          "throughput_prompts_per_s": 0.8547,
+          "stream_ttft_ms_mean": 217.7264,
+          "stream_toks_per_s": 54.8203,
+          "stream_itl_ms_mean": 14.8488,
+          "stream_total_time_ms_mean": 1161.3693
+        },
+        {
+          "id": "qwen3-8b-4bit-pass2",
+          "gate_should_continue_t0": true,
+          "gate_should_continue_t1": true,
+          "determinism_status": "PASS",
+          "determinism_agreement": 1.0,
+          "perplexity_status": "PASS",
+          "perplexity": 2.244749087691627,
+          "throughput_toks_per_s": 54.9368,
+          "throughput_prompts_per_s": 0.8584,
+          "stream_ttft_ms_mean": 237.2167,
+          "stream_toks_per_s": 52.7035,
+          "stream_itl_ms_mean": 15.2704,
+          "stream_total_time_ms_mean": 1208.0152
+        }
+      ],
+      "aggregate": {
+        "throughput_toks_per_s_mean_sd_cv": [
+          54.8177,
+          0.1684,
+          0.31
+        ],
+        "throughput_prompts_per_s_mean_sd_cv": [
+          0.8566,
+          0.0026,
+          0.31
+        ],
+        "stream_ttft_ms_mean_sd_cv": [
+          227.4716,
+          13.7817,
+          6.06
+        ],
+        "stream_toks_per_s_mean_sd_cv": [
+          53.7619,
+          1.4968,
+          2.78
+        ],
+        "perplexity_mean_sd_cv": [
+          2.2447,
+          0.0,
+          0.0
+        ]
+      },
+      "gate_all_pass": true
+    },
+    {
+      "model": "Qwen3-30B-A3B-Instruct-2507-4bit",
+      "passes": [
+        {
+          "id": "qwen3-30b-a3b-4bit-pass1",
+          "gate_should_continue_t0": true,
+          "gate_should_continue_t1": true,
+          "determinism_status": "PASS",
+          "determinism_agreement": 1.0,
+          "perplexity_status": "PASS",
+          "perplexity": 2.1927495310818794,
+          "throughput_toks_per_s": 53.2716,
+          "throughput_prompts_per_s": 1.6192,
+          "stream_ttft_ms_mean": 197.0926,
+          "stream_toks_per_s": 50.7456,
+          "stream_itl_ms_mean": 13.1778,
+          "stream_total_time_ms_mean": 604.3214
+        },
+        {
+          "id": "qwen3-30b-a3b-4bit-pass2",
+          "gate_should_continue_t0": true,
+          "gate_should_continue_t1": true,
+          "determinism_status": "PASS",
+          "determinism_agreement": 1.0,
+          "perplexity_status": "PASS",
+          "perplexity": 2.1927495310818794,
+          "throughput_toks_per_s": 51.8206,
+          "throughput_prompts_per_s": 1.5751,
+          "stream_ttft_ms_mean": 193.3592,
+          "stream_toks_per_s": 50.5612,
+          "stream_itl_ms_mean": 13.3831,
+          "stream_total_time_ms_mean": 606.5253
+        }
+      ],
+      "aggregate": {
+        "throughput_toks_per_s_mean_sd_cv": [
+          52.5461,
+          1.026,
+          1.95
+        ],
+        "throughput_prompts_per_s_mean_sd_cv": [
+          1.5972,
+          0.0312,
+          1.95
+        ],
+        "stream_ttft_ms_mean_sd_cv": [
+          195.2259,
+          2.6399,
+          1.35
+        ],
+        "stream_toks_per_s_mean_sd_cv": [
+          50.6534,
+          0.1304,
+          0.26
+        ],
+        "perplexity_mean_sd_cv": [
+          2.1927,
+          0.0,
+          0.0
+        ]
+      },
+      "gate_all_pass": true
+    }
+  ]
+}
