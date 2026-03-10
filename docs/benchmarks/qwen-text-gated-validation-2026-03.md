@@ -15,6 +15,11 @@ This report summarizes three independent diagnostic-gated benchmark passes for t
   - throughput token/s coefficient of variation (CV) > `10%`, or
   - streaming TTFT CV > `15%`.
 - Periodic qualifier: run reference-divergence check `T1.2` on a recurring basis for each model family/quantization class (not required on every individual pass).
+- `T1.2` policy closure (`2026-03-10`) for current MLX quantized checkpoints:
+  - `PASS`: qualifier satisfied.
+  - `SKIP-KNOWN` (known reference-load incompatibility, `quantization_config` missing `quant_method`): non-blocking when required per-pass gates (`T0/T1/T1.1/T1.3`) pass and qualifier provenance is attached.
+  - `SKIP-UNKNOWN` or `FAIL`: blocking until triaged/fixed or explicitly waived.
+  - cadence: run before first public promotion per model family/quantization class, rerun after dependency/toolchain changes, and rerun at least every 30 days for active promoted families.
 
 ## Models Included
 
@@ -46,7 +51,7 @@ This report summarizes three independent diagnostic-gated benchmark passes for t
 - These are diagnostic-gated validation runs captured for reproducibility.
 - Release-grade pass count is now met for both included models (3/3).
 - Auto-escalation to pass 4 is not currently triggered: throughput CV and TTFT CV are below escalation thresholds for both models.
-- Periodic `T1.2` reference qualifier was attempted with reference dependencies enabled, but is currently blocked for these MLX quantized checkpoints by a `transformers` quantization-config incompatibility (missing `quant_method`).
+- Current `T1.2` classification for included MLX quantized checkpoints is `SKIP-KNOWN`, driven by a `transformers` reference-load quantization-config incompatibility (`missing quant_method`).
 - Full provenance bundles (raw gate output, server logs, and raw benchmark JSON) are retained in internal artifacts.
 
 Source data: [qwen-text-gated-validation-2026-03-source.json](qwen-text-gated-validation-2026-03-source.json)

@@ -1,6 +1,6 @@
 {
   "report_id": "qwen-text-gated-validation-2026-03",
-  "generated_at_utc": "2026-03-09T10:58:10Z",
+  "generated_at_utc": "2026-03-10T19:05:00Z",
   "method": {
     "gating": "Tier 0 + Tier 1 diagnostic gate before benchmark run",
     "benchmark_workloads": {
@@ -24,8 +24,21 @@
       "periodic_qualifier": [
         "T1.2 reference divergence should be run periodically per model family/quantization class"
       ],
+      "periodic_qualifier_policy_closure_date": "2026-03-10",
+      "periodic_qualifier_outcome_contract": [
+        "PASS: qualifier satisfied",
+        "SKIP-KNOWN: known reference-load incompatibility (quantization_config missing quant_method) and non-blocking only with T0/T1/T1.1/T1.3 pass conditions plus attached provenance",
+        "SKIP-UNKNOWN: blocking until triaged/fixed or explicitly waived",
+        "FAIL: blocking until triaged/fixed or explicitly waived"
+      ],
+      "periodic_qualifier_cadence": [
+        "Before first public promotion per model family/quantization class",
+        "After dependency/toolchain changes",
+        "At least every 30 days for active promoted families"
+      ],
       "periodic_qualifier_status": [
         "Attempted on 2026-03-09 with reference dependencies enabled",
+        "Current classification for included MLX quantized checkpoints: SKIP-KNOWN",
         "Blocked for current MLX quantized checkpoints by transformers quantization-config incompatibility (missing quant_method)"
       ]
     }
