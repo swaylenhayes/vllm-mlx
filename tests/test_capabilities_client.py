@@ -32,6 +32,7 @@ def _sample_payload():
             "auto_tool_choice": False,
             "structured_output": True,
             "reasoning": False,
+            "reasoning_configured": False,
             "embeddings": True,
             "anthropic_messages": True,
             "mcp": False,
@@ -89,6 +90,7 @@ def test_summarize_capabilities_returns_stable_shape():
     assert summary["model_loaded"] is True
     assert summary["supports_multimodal"] is True
     assert summary["supports_tool_calling"] is True
+    assert summary["supports_reasoning_configured"] is False
     assert summary["supports_request_diagnostics"] is True
     assert summary["strict_model_id_enforced"] is True
     assert summary["default_diagnostics_level"] == "basic"
@@ -124,3 +126,22 @@ def test_fetch_capabilities_validates_http_and_payload(monkeypatch):
     assert calls["url"].endswith("/v1/capabilities")
     assert calls["headers"]["Authorization"] == "Bearer secret"
     assert calls["timeout"] == 9
+
+
+def test_parse_capabilities_payload_accepts_model_traits_extension():
+    payload = _sample_payload()
+    payload["model_traits"] = {
+        "model_type": "qwen3",
+        "architecture_type": "Qwen3ForCausalLM",
+        "max_position_embeddings": 8192,
+        "is_vlm": False,
+        "has_chat_template": True,
+        "known_issues": [],
+        "triage_available": False,
+        "triage_status": "unavailable",
+    }
+
+    parsed = parse_capabilities_payload(payload)
+    assert parsed.model_traits is not None
+    assert parsed.model_traits.architecture_type == "Qwen3ForCausalLM"
+    assert parsed.model_traits.triage_available is False

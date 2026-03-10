@@ -40,7 +40,9 @@ The server provides:
 import argparse
 import asyncio
 import contextlib
+import importlib
 import ipaddress
+import inspect
 import importlib.metadata
 import importlib.util
 import json
@@ -75,6 +77,7 @@ from .api.models import (
     CapabilityDiagnostics,
     CapabilityFeatures,
     CapabilityLimits,
+    CapabilityModelTraits,
     CapabilityModalities,
     CapabilityPolicies,
     CapabilityRateLimit,
@@ -782,6 +785,12 @@ _auth_warning_logged: bool = False
 # Reasoning parser (for models like Qwen3, DeepSeek-R1)
 _reasoning_parser = None  # ReasoningParser instance when enabled
 
+# Model-traits triage state
+_MODEL_TRAITS_TRIAGE_TIMEOUT_SECONDS = 25.0
+_model_traits_lock = threading.Lock()
+_model_traits_triage_cache: dict[str, dict[str, Any]] = {}
+_model_traits_triage_task: asyncio.Task | None = None
+
 # Tool calling configuration
 _enable_auto_tool_choice: bool = False
 _tool_call_parser: str | None = None  # Parser name: auto, mistral, qwen, llama, hermes
@@ -851,6 +860,7 @@ async def lifespan(app: FastAPI):
     """FastAPI lifespan for startup/shutdown events."""
     global _engine, _mcp_manager, _memory_monitor_task
     global _batch_divergence_monitor_task, _batch_serialize_lock
+    global _model_traits_triage_task
 
     # Startup: Start engine if loaded (needed for BatchedEngine in uvicorn's event loop)
     if _engine is not None and hasattr(_engine, "_loaded") and not _engine._loaded:
@@ -859,6 +869,9 @@ async def lifespan(app: FastAPI):
     # Load persisted cache from disk (AFTER engine start — AsyncEngineCore must exist)
     if _engine is not None and hasattr(_engine, "load_cache_from_disk"):
         _load_prefix_cache_from_disk()
+
+    # Schedule model-trait triage after model load/startup (non-blocking).
+    _schedule_model_traits_triage_if_needed()
 
     # Initialize MCP if config provided
     mcp_config = os.environ.get("VLLM_MLX_MCP_CONFIG")
@@ -915,6 +928,11 @@ async def lifespan(app: FastAPI):
         with contextlib.suppress(asyncio.CancelledError):
             await _batch_divergence_monitor_task
         _batch_divergence_monitor_task = None
+    if _model_traits_triage_task is not None:
+        _model_traits_triage_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _model_traits_triage_task
+        _model_traits_triage_task = None
     _batch_serialize_lock = None
 
 
@@ -1548,6 +1566,9 @@ def load_model(
     global _engine, _model_name, _default_max_tokens, _tool_parser_instance
     global _batch_divergence_state
 
+    # Model reload invalidates previous model-trait triage state/caches.
+    _reset_model_traits_triage_state()
+
     _default_max_tokens = max_tokens
     _model_name = model_name
     # Reset tool parser instance when model is reloaded (tokenizer may change)
@@ -1586,6 +1607,7 @@ def load_model(
         logger.info(f"Native tool format enabled for parser: {_tool_call_parser}")
 
     logger.info(f"Default max tokens: {_default_max_tokens}")
+    _schedule_model_traits_triage_if_needed()
 
 
 def get_usage(output: GenerationOutput) -> Usage:
@@ -1606,6 +1628,625 @@ def get_usage(output: GenerationOutput) -> Usage:
 def _module_available(module_name: str) -> bool:
     """Check whether a Python module can be imported in this runtime."""
     return importlib.util.find_spec(module_name) is not None
+
+
+def _triage_module_available() -> bool:
+    """Return whether mlx-triage is importable in this runtime."""
+    return _module_available("mlx_triage") or _module_available("mlxtriage")
+
+
+def _triage_package_version() -> str | None:
+    """Return installed mlx-triage package version when available."""
+    for package_name in ("mlx-triage", "mlx_triage"):
+        try:
+            return importlib.metadata.version(package_name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+    return None
+
+
+def _coerce_bool(value: Any) -> bool | None:
+    """Best-effort bool coercion for heterogeneous adapter payloads."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "y", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "n", "off"}:
+            return False
+    if isinstance(value, (int, float)):
+        if value == 1:
+            return True
+        if value == 0:
+            return False
+    return None
+
+
+def _coerce_mapping(value: Any) -> dict[str, Any] | None:
+    """Convert supported objects into a plain dictionary."""
+    if isinstance(value, dict):
+        return value
+    if hasattr(value, "model_dump"):
+        dumped = value.model_dump(exclude_none=True)
+        if isinstance(dumped, dict):
+            return dumped
+    if hasattr(value, "dict"):
+        dumped = value.dict()
+        if isinstance(dumped, dict):
+            return dumped
+    return None
+
+
+def _coerce_string_list(value: Any) -> list[str]:
+    """Normalize list-like values to a list of strings."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(item) for item in value if item is not None]
+    if isinstance(value, tuple):
+        return [str(item) for item in value if item is not None]
+    return []
+
+
+def _callable_accepts_kwargs(callable_obj: Any, kwargs: dict[str, Any]) -> bool:
+    """Check whether callable signature can accept the given keyword args."""
+    try:
+        signature = inspect.signature(callable_obj)
+    except (TypeError, ValueError):
+        return True
+
+    parameters = signature.parameters
+    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters.values()):
+        return True
+    return all(name in parameters for name in kwargs)
+
+
+def _resolve_mlx_triage_awaitable(result: Any) -> Any:
+    """Resolve awaitable triage call results inside a worker thread."""
+    if inspect.isawaitable(result):
+        return asyncio.run(result)
+    return result
+
+
+def _call_mlx_triage_candidate(candidate: Any, model_name: str) -> Any:
+    """Invoke a triage callable across a small set of compatible signatures."""
+    call_variants = [
+        {"model_name": model_name, "tier": 0},
+        {"model": model_name, "tier": 0},
+        {"model_id": model_name, "tier": 0},
+        {"model_name": model_name},
+        {"model": model_name},
+        {"model_id": model_name},
+    ]
+
+    for kwargs in call_variants:
+        if not _callable_accepts_kwargs(candidate, kwargs):
+            continue
+        try:
+            result = candidate(**kwargs)
+            return _resolve_mlx_triage_awaitable(result)
+        except TypeError:
+            continue
+
+    for args in ((model_name,), tuple()):
+        try:
+            result = candidate(*args)
+            return _resolve_mlx_triage_awaitable(result)
+        except TypeError:
+            continue
+
+    raise RuntimeError("No compatible invocation signature for mlx-triage runner.")
+
+
+def _resolve_mlx_triage_runner(module: Any) -> list[tuple[str, Any]]:
+    """Return supported Tier 0 runner callables from mlx-triage module."""
+    runners: list[tuple[str, Any]] = []
+
+    direct = getattr(module, "run_tier0", None)
+    if callable(direct):
+        runners.append(("run_tier0", direct))
+
+    for attr_name in ("tier0", "api", "diagnostics"):
+        namespace = getattr(module, attr_name, None)
+        if namespace is None:
+            continue
+        for candidate_name in ("run_tier0", "run"):
+            candidate = getattr(namespace, candidate_name, None)
+            if callable(candidate):
+                runners.append((f"{attr_name}.{candidate_name}", candidate))
+
+    return runners
+
+
+def _run_mlx_triage_tier0_sync(model_name: str) -> dict[str, Any]:
+    """Run mlx-triage Tier 0 synchronously and return normalized traits payload."""
+    module = None
+    for module_name in ("mlx_triage", "mlxtriage"):
+        try:
+            module = importlib.import_module(module_name)
+            break
+        except Exception:
+            continue
+    if module is None:
+        raise RuntimeError("mlx-triage module not importable.")
+
+    runners = _resolve_mlx_triage_runner(module)
+    if not runners:
+        raise RuntimeError("mlx-triage runner not found (expected run_tier0 API).")
+
+    last_error: Exception | None = None
+    for runner_name, runner in runners:
+        try:
+            raw = _call_mlx_triage_candidate(runner, model_name)
+            payload = _normalize_triage_traits_payload(raw)
+            payload.setdefault("runner", runner_name)
+            return payload
+        except Exception as exc:
+            last_error = exc
+
+    raise RuntimeError(f"mlx-triage Tier 0 failed: {last_error}")
+
+
+def _normalize_triage_traits_payload(raw: Any) -> dict[str, Any]:
+    """Extract trait fields from heterogeneous mlx-triage payload shapes."""
+    payload = _coerce_mapping(raw)
+    if payload is None:
+        return {}
+
+    containers: list[dict[str, Any]] = [payload]
+    for key in ("traits", "model_traits", "tier0", "result", "data"):
+        nested = _coerce_mapping(payload.get(key))
+        if nested is not None:
+            containers.append(nested)
+
+    def _pick(*keys: str) -> Any:
+        for container in containers:
+            for key in keys:
+                if key in container and container.get(key) is not None:
+                    return container.get(key)
+        return None
+
+    architecture_value = _pick("architecture_type", "architecture", "architectures")
+    architecture_type = None
+    if isinstance(architecture_value, str):
+        architecture_type = architecture_value
+    elif isinstance(architecture_value, list) and architecture_value:
+        architecture_type = str(architecture_value[0])
+
+    reasoning_mechanism = _pick(
+        "reasoning_mechanism", "reasoning_format", "thinking_mechanism"
+    )
+    if reasoning_mechanism is not None:
+        reasoning_mechanism = str(reasoning_mechanism)
+
+    normalized: dict[str, Any] = {}
+    for source_key, target_key in (
+        ("has_chat_template", "has_chat_template"),
+        ("is_vlm", "is_vlm"),
+        ("has_thinking_tokens", "has_thinking_tokens"),
+        ("has_think_tokens", "has_thinking_tokens"),
+    ):
+        parsed = _coerce_bool(_pick(source_key))
+        if parsed is not None:
+            normalized[target_key] = parsed
+
+    if architecture_type:
+        normalized["architecture_type"] = architecture_type
+    if reasoning_mechanism:
+        normalized["reasoning_mechanism"] = reasoning_mechanism
+
+    known_issues = _pick("known_issues", "issues", "known_bug_ids")
+    parsed_known_issues = _coerce_string_list(known_issues)
+    if parsed_known_issues:
+        normalized["known_issues"] = parsed_known_issues
+
+    return normalized
+
+
+def _update_model_traits_triage_cache(model_name: str, payload: dict[str, Any]) -> None:
+    """Upsert triage cache entry for a model."""
+    with _model_traits_lock:
+        current = dict(_model_traits_triage_cache.get(model_name, {}))
+        current.update(payload)
+        _model_traits_triage_cache[model_name] = current
+
+
+def _get_model_traits_triage_snapshot(model_name: str | None) -> dict[str, Any]:
+    """Return a copy of triage cache entry for a model."""
+    if not model_name:
+        return {}
+    with _model_traits_lock:
+        return dict(_model_traits_triage_cache.get(model_name, {}))
+
+
+def _reset_model_traits_triage_state() -> None:
+    """Invalidate trait cache on model reload and cancel stale background runs."""
+    global _model_traits_triage_task
+
+    task = _model_traits_triage_task
+    if task is not None and not task.done():
+        task.cancel()
+    _model_traits_triage_task = None
+    with _model_traits_lock:
+        _model_traits_triage_cache.clear()
+
+
+async def _run_model_traits_triage_background(model_name: str) -> None:
+    """Execute optional mlx-triage Tier 0 in the background for a model."""
+    global _model_traits_triage_task
+
+    triage_version = _triage_package_version()
+    try:
+        raw_payload = await asyncio.wait_for(
+            asyncio.to_thread(_run_mlx_triage_tier0_sync, model_name),
+            timeout=_MODEL_TRAITS_TRIAGE_TIMEOUT_SECONDS,
+        )
+        _update_model_traits_triage_cache(
+            model_name,
+            {
+                "status": "ready",
+                "triage_available": True,
+                "triage_version": triage_version,
+                "traits": raw_payload,
+                "error": None,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
+    except asyncio.CancelledError:
+        raise
+    except asyncio.TimeoutError:
+        _update_model_traits_triage_cache(
+            model_name,
+            {
+                "status": "failed",
+                "triage_available": True,
+                "triage_version": triage_version,
+                "traits": {},
+                "error": (
+                    f"Tier 0 timed out after "
+                    f"{_MODEL_TRAITS_TRIAGE_TIMEOUT_SECONDS:.1f}s"
+                ),
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
+    except Exception as exc:
+        _update_model_traits_triage_cache(
+            model_name,
+            {
+                "status": "failed",
+                "triage_available": True,
+                "triage_version": triage_version,
+                "traits": {},
+                "error": str(exc),
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
+    finally:
+        current = asyncio.current_task()
+        if _model_traits_triage_task is current:
+            _model_traits_triage_task = None
+
+
+def _schedule_model_traits_triage_if_needed() -> None:
+    """Schedule background Tier 0 triage for the currently loaded model."""
+    global _model_traits_triage_task
+
+    model_name = _model_name
+    if not model_name:
+        return
+
+    if not _triage_module_available():
+        _update_model_traits_triage_cache(
+            model_name,
+            {
+                "status": "unavailable",
+                "triage_available": False,
+                "triage_version": None,
+                "traits": {},
+                "error": None,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        return
+
+    snapshot = _get_model_traits_triage_snapshot(model_name)
+    if snapshot.get("status") == "ready":
+        return
+
+    task = _model_traits_triage_task
+    if task is not None and not task.done():
+        return
+
+    _update_model_traits_triage_cache(
+        model_name,
+        {
+            "status": "pending",
+            "triage_available": True,
+            "triage_version": _triage_package_version(),
+            "traits": snapshot.get("traits", {}),
+            "error": None,
+            "updated_at": datetime.now(UTC).isoformat(),
+        },
+    )
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    _model_traits_triage_task = loop.create_task(
+        _run_model_traits_triage_background(model_name)
+    )
+
+
+def _iter_model_config_candidates() -> list[Any]:
+    """Collect in-memory config-like objects from loaded engine state."""
+    if _engine is None:
+        return []
+
+    base_model = getattr(_engine, "_model", None)
+    nested_model = getattr(base_model, "model", None)
+    mllm_instance = getattr(_engine, "_mllm_instance", None)
+
+    candidates: list[Any] = [
+        getattr(base_model, "config", None),
+        getattr(nested_model, "config", None),
+        getattr(mllm_instance, "config", None),
+        base_model,
+        nested_model,
+        mllm_instance,
+    ]
+    return [candidate for candidate in candidates if candidate is not None]
+
+
+def _extract_candidate_field(candidate: Any, field_name: str) -> Any:
+    """Read candidate field from dict-like or object-like config holders."""
+    if isinstance(candidate, dict):
+        return candidate.get(field_name)
+    return getattr(candidate, field_name, None)
+
+
+def _extract_model_type_from_candidates(candidates: list[Any]) -> str | None:
+    """Extract model_type from loaded model config objects."""
+    for candidate in candidates:
+        value = _extract_candidate_field(candidate, "model_type")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _extract_architecture_type_from_candidates(candidates: list[Any]) -> str | None:
+    """Extract primary architecture type from loaded model config objects."""
+    for candidate in candidates:
+        value = _extract_candidate_field(candidate, "architectures")
+        if isinstance(value, list) and value:
+            first = value[0]
+            if first is not None:
+                return str(first)
+        if isinstance(value, tuple) and value:
+            first = value[0]
+            if first is not None:
+                return str(first)
+    return None
+
+
+def _extract_max_position_embeddings_from_candidates(candidates: list[Any]) -> int | None:
+    """Extract max_position_embeddings from top-level or nested text config."""
+    for candidate in candidates:
+        value = _extract_candidate_field(candidate, "max_position_embeddings")
+        if value is not None:
+            parsed = _coerce_context_limit(value)
+            if parsed is not None:
+                return parsed
+
+        text_config = _extract_candidate_field(candidate, "text_config")
+        if text_config is not None:
+            nested = _extract_candidate_field(text_config, "max_position_embeddings")
+            if nested is not None:
+                parsed = _coerce_context_limit(nested)
+                if parsed is not None:
+                    return parsed
+
+    return None
+
+
+def _collect_tokenizer_special_tokens(tokenizer: Any | None) -> set[str]:
+    """Collect special tokens from tokenizer and nested tokenizer objects."""
+    if tokenizer is None:
+        return set()
+
+    tokens: set[str] = set()
+    for candidate in (tokenizer, getattr(tokenizer, "tokenizer", None)):
+        if candidate is None:
+            continue
+        raw = getattr(candidate, "all_special_tokens", None)
+        if isinstance(raw, list):
+            tokens.update(str(token) for token in raw if token is not None)
+        additional = getattr(candidate, "additional_special_tokens", None)
+        if isinstance(additional, list):
+            tokens.update(str(token) for token in additional if token is not None)
+    return tokens
+
+
+def _tokenizer_has_chat_template(tokenizer: Any | None) -> bool:
+    """Return whether tokenizer exposes chat templating support."""
+    if tokenizer is None:
+        return False
+    for candidate in (tokenizer, getattr(tokenizer, "tokenizer", None)):
+        if candidate is None:
+            continue
+        template = getattr(candidate, "chat_template", None)
+        if isinstance(template, str) and template.strip():
+            return True
+        if hasattr(candidate, "apply_chat_template"):
+            return True
+    return False
+
+
+def _tokenizer_has_thinking_tokens(tokenizer: Any | None) -> bool:
+    """Detect think-tag special tokens in tokenizer vocabulary metadata."""
+    special_tokens = _collect_tokenizer_special_tokens(tokenizer)
+    return "<think>" in special_tokens or "</think>" in special_tokens
+
+
+def _infer_reasoning_mechanism_from_parser(parser: Any | None) -> str | None:
+    """Infer parser mechanism family for compatibility checks."""
+    if parser is None:
+        return None
+
+    parser_name = parser.__class__.__name__.lower()
+    if "harmony" in parser_name or "gptoss" in parser_name or "gpt_oss" in parser_name:
+        return "channel"
+
+    start_token = getattr(parser, "start_token", None)
+    end_token = getattr(parser, "end_token", None)
+    if isinstance(start_token, str) and isinstance(end_token, str):
+        return "think_tags"
+
+    return "unknown"
+
+
+def _collect_known_issue_ids(architecture_key: str | None = None) -> list[str]:
+    """Collect matching known issue IDs for current runtime/package versions."""
+    versions = _collect_runtime_versions()
+    architecture = architecture_key or _infer_model_architecture()
+    known_bugs = _load_known_bug_entries()
+
+    matching_bug_ids: list[str] = []
+    for entry in known_bugs:
+        if not isinstance(entry, dict):
+            continue
+        bug_id = str(entry.get("id", "unknown"))
+        applies = entry.get("applies_to_architectures", [])
+        if applies and architecture not in applies and "all" not in applies:
+            continue
+
+        constraints = entry.get("constraints", {})
+        if not isinstance(constraints, dict):
+            constraints = {}
+
+        violated = True
+        for package_name, constraint in constraints.items():
+            if not isinstance(constraint, str):
+                continue
+            pkg_version = versions.get(package_name, "unknown")
+            if not _version_satisfies_constraint(pkg_version, constraint):
+                violated = False
+                break
+        if violated:
+            matching_bug_ids.append(bug_id)
+
+    return sorted(set(matching_bug_ids))
+
+
+def _apply_triage_traits(
+    traits: CapabilityModelTraits,
+    triage_traits: dict[str, Any],
+) -> CapabilityModelTraits:
+    """Overlay triage-derived traits onto base model-traits payload."""
+    parsed_bool = _coerce_bool(triage_traits.get("has_chat_template"))
+    if parsed_bool is not None:
+        traits.has_chat_template = parsed_bool
+
+    parsed_bool = _coerce_bool(triage_traits.get("is_vlm"))
+    if parsed_bool is not None:
+        traits.is_vlm = parsed_bool
+
+    architecture_type = triage_traits.get("architecture_type")
+    if isinstance(architecture_type, str) and architecture_type.strip():
+        traits.architecture_type = architecture_type.strip()
+
+    parsed_bool = _coerce_bool(triage_traits.get("has_thinking_tokens"))
+    if parsed_bool is not None:
+        traits.has_thinking_tokens = parsed_bool
+
+    reasoning_mechanism = triage_traits.get("reasoning_mechanism")
+    if isinstance(reasoning_mechanism, str) and reasoning_mechanism.strip():
+        traits.reasoning_mechanism = reasoning_mechanism.strip()
+
+    known_issues = _coerce_string_list(triage_traits.get("known_issues"))
+    if known_issues:
+        traits.known_issues = known_issues
+
+    return traits
+
+
+def collect_model_traits_base() -> CapabilityModelTraits | None:
+    """Collect model-layer traits from loaded runtime state."""
+    if _engine is None:
+        return None
+
+    model_name = _model_name
+    triage_snapshot = _get_model_traits_triage_snapshot(model_name)
+    triage_available = bool(
+        triage_snapshot.get("triage_available", _triage_module_available())
+    )
+    triage_status = str(
+        triage_snapshot.get(
+            "status",
+            "pending" if triage_available else "unavailable",
+        )
+    )
+    if triage_status not in {"pending", "ready", "unavailable", "failed"}:
+        triage_status = "pending" if triage_available else "unavailable"
+
+    tokenizer = _get_text_tokenizer()
+    config_candidates = _iter_model_config_candidates()
+    architecture_key = _infer_model_architecture()
+
+    traits = CapabilityModelTraits(
+        model_type=_extract_model_type_from_candidates(config_candidates),
+        architecture_type=_extract_architecture_type_from_candidates(config_candidates),
+        max_position_embeddings=(
+            _extract_max_position_embeddings_from_candidates(config_candidates)
+            or _infer_model_context_tokens()
+        ),
+        is_vlm=bool(_engine.is_mllm),
+        has_chat_template=_tokenizer_has_chat_template(tokenizer),
+        known_issues=_collect_known_issue_ids(architecture_key=architecture_key),
+        triage_available=triage_available,
+        triage_status=triage_status,
+        triage_version=triage_snapshot.get("triage_version")
+        or (_triage_package_version() if triage_available else None),
+        has_thinking_tokens=_tokenizer_has_thinking_tokens(tokenizer),
+        reasoning_mechanism=_infer_reasoning_mechanism_from_parser(_reasoning_parser),
+        triage_error=triage_snapshot.get("error"),
+    )
+
+    triage_traits = triage_snapshot.get("traits")
+    if isinstance(triage_traits, dict):
+        traits = _apply_triage_traits(traits, triage_traits)
+
+    return traits
+
+
+def _is_reasoning_parser_model_compatible(
+    model_traits: CapabilityModelTraits | None,
+) -> bool:
+    """Check whether configured parser is compatible with loaded model traits."""
+    if _reasoning_parser is None:
+        return False
+
+    mechanism = (
+        (model_traits.reasoning_mechanism if model_traits else None)
+        or _infer_reasoning_mechanism_from_parser(_reasoning_parser)
+        or "unknown"
+    ).strip().lower()
+
+    if mechanism in {"channel", "harmony", "gpt_oss", "gpt-oss"}:
+        return True
+
+    if mechanism in {"think_tags", "think"}:
+        return bool(model_traits and model_traits.has_thinking_tokens)
+
+    boundaries = _get_reasoning_boundary_tokens()
+    if boundaries is not None:
+        return bool(model_traits and model_traits.has_thinking_tokens)
+
+    return True
 
 
 def _parse_version_tuple(version_str: str | None) -> tuple[int, ...] | None:
@@ -2407,31 +3048,7 @@ def _check_version_status() -> DiagnosticCheck:
     """Run runtime version diagnostics and known-bug matching."""
     versions = _collect_runtime_versions()
     architecture = _infer_model_architecture()
-    known_bugs = _load_known_bug_entries()
-
-    matching_bug_ids: list[str] = []
-    for entry in known_bugs:
-        if not isinstance(entry, dict):
-            continue
-        bug_id = str(entry.get("id", "unknown"))
-        applies = entry.get("applies_to_architectures", [])
-        if applies and architecture not in applies and "all" not in applies:
-            continue
-
-        constraints = entry.get("constraints", {})
-        if not isinstance(constraints, dict):
-            constraints = {}
-
-        violated = True
-        for package_name, constraint in constraints.items():
-            if not isinstance(constraint, str):
-                continue
-            pkg_version = versions.get(package_name, "unknown")
-            if not _version_satisfies_constraint(pkg_version, constraint):
-                violated = False
-                break
-        if violated:
-            matching_bug_ids.append(bug_id)
+    matching_bug_ids = _collect_known_issue_ids(architecture_key=architecture)
 
     detail = (
         f"mlx {versions.get('mlx')}, mlx-lm {versions.get('mlx-lm')}, "
@@ -2702,6 +3319,11 @@ async def get_capabilities() -> CapabilitiesResponse:
     model_loaded = _engine is not None
     model_is_mllm = bool(_engine and _engine.is_mllm)
     model_type = "mllm" if model_is_mllm else ("llm" if model_loaded else None)
+    model_traits = collect_model_traits_base() if model_loaded else None
+    reasoning_configured = _reasoning_parser is not None
+    reasoning_effective = bool(
+        model_loaded and _is_reasoning_parser_model_compatible(model_traits)
+    )
     max_context_tokens, effective_context_tokens, effective_context_source = (
         _resolve_context_contract()
     )
@@ -2725,7 +3347,8 @@ async def get_capabilities() -> CapabilitiesResponse:
             tool_calling=model_loaded,
             auto_tool_choice=_enable_auto_tool_choice,
             structured_output=True,
-            reasoning=_reasoning_parser is not None,
+            reasoning=reasoning_effective,
+            reasoning_configured=reasoning_configured,
             embeddings=embeddings_available,
             anthropic_messages=True,
             mcp=_mcp_manager is not None,
@@ -2759,6 +3382,7 @@ async def get_capabilities() -> CapabilitiesResponse:
             effective_context_tokens=effective_context_tokens,
             effective_context_source=effective_context_source,
         ),
+        model_traits=model_traits,
     )
 
 

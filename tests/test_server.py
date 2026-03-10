@@ -1535,6 +1535,192 @@ class TestCapabilitiesEndpoint:
 
         assert result.limits.default_max_tokens > 0
         assert result.limits.default_timeout_seconds > 0
+        assert isinstance(result.features.reasoning_configured, bool)
+
+    def test_capabilities_model_traits_none_when_model_not_loaded(self, monkeypatch):
+        """Capabilities should omit model traits when no model is loaded."""
+        import asyncio
+
+        import vllm_mlx.server as server
+
+        monkeypatch.setattr(server, "_engine", None)
+        monkeypatch.setattr(server, "_model_name", None)
+        monkeypatch.setattr(server, "_reasoning_parser", None)
+        monkeypatch.setattr(server, "_model_traits_triage_cache", {})
+
+        result = asyncio.get_event_loop().run_until_complete(server.get_capabilities())
+
+        assert result.model_loaded is False
+        assert result.model_traits is None
+        assert result.features.reasoning is False
+        assert result.features.reasoning_configured is False
+
+    def test_capabilities_model_traits_graceful_degradation(self, monkeypatch):
+        """Model traits should degrade gracefully when mlx-triage is unavailable."""
+        import asyncio
+
+        import vllm_mlx.server as server
+        from vllm_mlx.reasoning import get_parser
+
+        class _DummyConfig:
+            model_type = "qwen3"
+            architectures = ["Qwen3ForCausalLM"]
+            max_position_embeddings = 8192
+
+        class _DummyModel:
+            config = _DummyConfig()
+
+        class _DummyTokenizer:
+            def __init__(self):
+                self.model_max_length = 8192
+                self.chat_template = "{{ messages }}"
+                self.all_special_tokens = []
+
+            def encode(self, text, add_special_tokens=False):
+                return [1, 2, 3]
+
+            def decode(self, token_ids, skip_special_tokens=False):
+                return "x"
+
+        class _DummyEngine:
+            is_mllm = False
+            tokenizer = _DummyTokenizer()
+            _model = _DummyModel()
+            _mllm_instance = None
+
+        monkeypatch.setattr(server, "_engine", _DummyEngine())
+        monkeypatch.setattr(server, "_model_name", "test-model")
+        monkeypatch.setattr(server, "_reasoning_parser", get_parser("qwen3")())
+        monkeypatch.setattr(server, "_model_traits_triage_cache", {})
+        monkeypatch.setattr(
+            server,
+            "_module_available",
+            lambda module_name: module_name not in {"mlx_triage", "mlxtriage"},
+        )
+
+        result = asyncio.get_event_loop().run_until_complete(server.get_capabilities())
+
+        assert result.model_loaded is True
+        assert result.model_traits is not None
+        assert result.model_traits.architecture_type == "Qwen3ForCausalLM"
+        assert result.model_traits.triage_available is False
+        assert result.model_traits.triage_status == "unavailable"
+        assert result.features.reasoning_configured is True
+        assert result.features.reasoning is False
+
+    def test_reasoning_parser_compatibility_think_vs_channel(self, monkeypatch):
+        """Think-tag parsers require thinking tokens; channel parsers do not."""
+        import asyncio
+
+        import vllm_mlx.server as server
+        from vllm_mlx.reasoning import get_parser
+
+        class _DummyConfig:
+            model_type = "gpt_oss"
+            architectures = ["GptOssForCausalLM"]
+            max_position_embeddings = 32768
+
+        class _DummyModel:
+            config = _DummyConfig()
+
+        class _DummyTokenizer:
+            model_max_length = 32768
+            chat_template = "{{ messages }}"
+            all_special_tokens = []
+
+            def encode(self, text, add_special_tokens=False):
+                return [1, 2, 3]
+
+            def decode(self, token_ids, skip_special_tokens=False):
+                return "x"
+
+        class _DummyEngine:
+            is_mllm = False
+            tokenizer = _DummyTokenizer()
+            _model = _DummyModel()
+            _mllm_instance = None
+
+        monkeypatch.setattr(server, "_engine", _DummyEngine())
+        monkeypatch.setattr(server, "_model_name", "channel-model")
+        monkeypatch.setattr(server, "_model_traits_triage_cache", {})
+        monkeypatch.setattr(
+            server,
+            "_module_available",
+            lambda module_name: module_name not in {"mlx_triage", "mlxtriage"},
+        )
+
+        monkeypatch.setattr(server, "_reasoning_parser", get_parser("qwen3")())
+        qwen_result = asyncio.get_event_loop().run_until_complete(server.get_capabilities())
+        assert qwen_result.features.reasoning_configured is True
+        assert qwen_result.features.reasoning is False
+
+        monkeypatch.setattr(server, "_reasoning_parser", get_parser("harmony")())
+        harmony_result = asyncio.get_event_loop().run_until_complete(
+            server.get_capabilities()
+        )
+        assert harmony_result.features.reasoning_configured is True
+        assert harmony_result.features.reasoning is True
+
+    def test_triage_reasoning_hints_override_tokenizer_defaults(self, monkeypatch):
+        """Triage has_thinking_tokens/reasoning_mechanism should feed reasoning flag."""
+        import asyncio
+
+        import vllm_mlx.server as server
+        from vllm_mlx.reasoning import get_parser
+
+        class _DummyConfig:
+            model_type = "qwen3"
+            architectures = ["Qwen3ForCausalLM"]
+            max_position_embeddings = 8192
+
+        class _DummyModel:
+            config = _DummyConfig()
+
+        class _DummyTokenizer:
+            model_max_length = 8192
+            chat_template = "{{ messages }}"
+            all_special_tokens = []
+
+            def encode(self, text, add_special_tokens=False):
+                return [1, 2, 3]
+
+            def decode(self, token_ids, skip_special_tokens=False):
+                return "x"
+
+        class _DummyEngine:
+            is_mllm = False
+            tokenizer = _DummyTokenizer()
+            _model = _DummyModel()
+            _mllm_instance = None
+
+        monkeypatch.setattr(server, "_engine", _DummyEngine())
+        monkeypatch.setattr(server, "_model_name", "triage-hint-model")
+        monkeypatch.setattr(server, "_reasoning_parser", get_parser("qwen3")())
+        monkeypatch.setattr(
+            server,
+            "_model_traits_triage_cache",
+            {
+                "triage-hint-model": {
+                    "status": "ready",
+                    "triage_available": True,
+                    "triage_version": "0.1.1",
+                    "traits": {
+                        "has_thinking_tokens": True,
+                        "reasoning_mechanism": "think_tags",
+                    },
+                    "error": None,
+                }
+            },
+        )
+        monkeypatch.setattr(server, "_module_available", lambda module_name: True)
+
+        result = asyncio.get_event_loop().run_until_complete(server.get_capabilities())
+
+        assert result.model_traits is not None
+        assert result.model_traits.has_thinking_tokens is True
+        assert result.model_traits.reasoning_mechanism == "think_tags"
+        assert result.features.reasoning_configured is True
+        assert result.features.reasoning is True
 
 
 class TestRateLimiterHTTPResponse:

@@ -97,6 +97,9 @@ audio = [
     "unidic-lite>=1.0.0",    # Japanese dictionary for fugashi
     "jieba>=0.42.0",         # Chinese word segmentation
 ]
+triage = [
+    "mlx-triage>=0.1.1",
+]
 
 [project.urls]
 Homepage = "https://github.com/vllm-mlx/vllm-mlx"

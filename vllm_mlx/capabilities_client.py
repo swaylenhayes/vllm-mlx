@@ -83,6 +83,7 @@ def summarize_capabilities(capabilities: CapabilitiesResponse) -> dict[str, Any]
         or capabilities.modalities.video,
         "supports_tool_calling": capabilities.features.tool_calling,
         "supports_reasoning": capabilities.features.reasoning,
+        "supports_reasoning_configured": capabilities.features.reasoning_configured,
         "auth_required": capabilities.auth.api_key_required,
         "rate_limit_enabled": capabilities.rate_limit.enabled,
         "default_max_tokens": capabilities.limits.default_max_tokens,

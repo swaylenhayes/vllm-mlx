@@ -350,6 +350,8 @@ class CapabilityFeatures(BaseModel):
     auto_tool_choice: bool
     structured_output: bool
     reasoning: bool
+    # Transitional field: parser configured at startup, regardless of model compatibility.
+    reasoning_configured: bool = False
     embeddings: bool
     anthropic_messages: bool
     mcp: bool
@@ -406,6 +408,23 @@ class CapabilityLimits(BaseModel):
     effective_context_source: str | None = None
 
 
+class CapabilityModelTraits(BaseModel):
+    """Model-layer capability traits for the currently loaded model."""
+
+    model_type: str | None = None
+    architecture_type: str | None = None
+    max_position_embeddings: int | None = None
+    is_vlm: bool = False
+    has_chat_template: bool = False
+    known_issues: list[str] = Field(default_factory=list)
+    triage_available: bool = False
+    triage_status: Literal["pending", "ready", "unavailable", "failed"] = "pending"
+    triage_version: str | None = None
+    has_thinking_tokens: bool | None = None
+    reasoning_mechanism: str | None = None
+    triage_error: str | None = None
+
+
 class CapabilitiesResponse(BaseModel):
     """Response for runtime API capability discovery."""
 
@@ -420,6 +439,7 @@ class CapabilitiesResponse(BaseModel):
     auth: CapabilityAuth
     rate_limit: CapabilityRateLimit
     limits: CapabilityLimits
+    model_traits: CapabilityModelTraits | None = None
 
 
 # =============================================================================
