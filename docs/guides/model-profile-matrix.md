@@ -22,6 +22,12 @@ Fresh validated Qwen3.5 checkpoints on the repo checkout:
 | Family | Checkpoints validated | Notes |
 |---|---|---|
 | Qwen3.5 multimodal | `Qwen3.5-4B-4bit`, `Qwen3.5-4B-8bit`, `Qwen3.5-9B-4bit`, `Qwen3.5-9B-8bit` | Startup, health, model listing, text chat, multimodal chat, and JSON-schema sanity validated |
+| Distilled Qwen3.5 text (Stage 3) | Jackrong `2B/4B/9B` (4-bit + 8-bit), Jackrong `27B-4bit`, `mlx-community` `27B-6bit`, `wbkou` `27B-8bit` | 7 promoted. 2 conditional for JSON mode when `enable_thinking` is omitted (see note below). |
+
+Stage 3 conditional JSON note (`2026-03-11`):
+- `Jackrong/MLX-Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-4bit`
+- `Jackrong/MLX-Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-8bit`
+- Both pass JSON mode when `enable_thinking=false` is set explicitly at request time.
 
 ## Quick Picks
 

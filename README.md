@@ -41,6 +41,11 @@ Validated behaviors on the Qwen3.5 family:
 - multimodal chat
 - structured output / JSON-schema with safe default handling when `enable_thinking` is omitted
 
+Additional Stage 3 distilled Qwen3.5 runtime qualification (`2026-03-11`):
+
+- 7 models promoted, 2 conditional for JSON mode when `enable_thinking` is omitted
+- full model list and status notes: [Supported Models](docs/reference/models.md)
+
 Recommended first profile:
 
 ```bash

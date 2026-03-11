@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the OpenAI-compatible API server."""
 
+import json
 import platform
 import sys
 
@@ -224,6 +225,40 @@ class TestHelperFunctions:
         assert not is_mllm_model("mlx-community/Llama-3.2-1B-Instruct-4bit")
         assert not is_mllm_model("mlx-community/Mistral-7B-Instruct-4bit")
         assert not is_mllm_model("mlx-community/Qwen2-7B-Instruct-4bit")
+
+    def test_metadata_detection_ignores_weak_qwen_vision_tokens(self, tmp_path):
+        """Qwen text checkpoints can carry vision token IDs without vision encoder."""
+        from vllm_mlx.api.utils import _metadata_indicates_mllm
+
+        config = {
+            "model_type": "qwen3_5",
+            "architectures": ["Qwen3_5ForConditionalGeneration"],
+            "vision_config": None,
+            "vision_start_token_id": 248053,
+            "vision_end_token_id": 248054,
+            "image_token_id": 248056,
+            "text_config": {"model_type": "qwen3_5_text"},
+        }
+        (tmp_path / "config.json").write_text(json.dumps(config), encoding="utf-8")
+
+        index = {"weight_map": {"model.layers.0.self_attn.q_proj.weight": "model.safetensors"}}
+        (tmp_path / "model.safetensors.index.json").write_text(
+            json.dumps(index), encoding="utf-8"
+        )
+
+        assert not _metadata_indicates_mllm(tmp_path)
+
+    def test_metadata_detection_requires_strong_vision_signal(self, tmp_path):
+        """A real vision_config block should classify the model as multimodal."""
+        from vllm_mlx.api.utils import _metadata_indicates_mllm
+
+        config = {
+            "model_type": "qwen2_vl",
+            "architectures": ["Qwen2VLForConditionalGeneration"],
+            "vision_config": {"hidden_size": 1024},
+        }
+        (tmp_path / "config.json").write_text(json.dumps(config), encoding="utf-8")
+        assert _metadata_indicates_mllm(tmp_path)
 
     def test_extract_multimodal_content_text_only(self):
         """Test extracting content from text-only messages."""

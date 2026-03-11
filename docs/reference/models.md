@@ -28,6 +28,25 @@ Browse thousands of pre-optimized models at: **https://huggingface.co/mlx-commun
 | Quality | `mlx-community/Llama-3.1-8B-Instruct-4bit` | ~4.5 GB |
 | Large | `mlx-community/Qwen3-30B-A3B-4bit` | ~16 GB |
 
+### Distilled Qwen3.5 (Stage 3 Runtime Qualification)
+
+Runtime qualification artifacts:
+
+- `/Users/swaylen/dev/vllm-mlx-fork/_docs/exports/stage3-distilled-qwen35-runtime-qualification-2026-03-11-run5-final/stage3_runtime_qualification_summary.md`
+- `/Users/swaylen/dev/vllm-mlx-fork/_docs/exports/stage3-distilled-qwen35-runtime-qualification-2026-03-11-run5-final/stage3_runtime_qualification_results.json`
+
+| Model ID | Quant | Status | Notes |
+|----------|-------|--------|-------|
+| `Jackrong/MLX-Qwen3.5-2B-Claude-4.6-Opus-Reasoning-Distilled-8bit` | 8-bit | promoted | Passed startup, health, models, capabilities, chat, determinism, JSON mode, streaming |
+| `Jackrong/MLX-Qwen3.5-2B-Claude-4.6-Opus-Reasoning-Distilled-4bit` | 4-bit | promoted | Passed startup, health, models, capabilities, chat, determinism, JSON mode, streaming |
+| `Jackrong/MLX-Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-8bit` | 8-bit | promoted | Passed startup, health, models, capabilities, chat, determinism, JSON mode, streaming |
+| `Jackrong/MLX-Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-4bit` | 4-bit | conditional | JSON mode degraded when `enable_thinking` omitted; passes with explicit `enable_thinking=false` |
+| `Jackrong/MLX-Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-8bit` | 8-bit | conditional | JSON mode degraded when `enable_thinking` omitted; passes with explicit `enable_thinking=false` |
+| `Jackrong/MLX-Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-4bit` | 4-bit | promoted | Passed startup, health, models, capabilities, chat, determinism, JSON mode, streaming |
+| `Jackrong/MLX-Qwen3.5-27B-Claude-4.6-Opus-Reasoning-Distilled-4bit` | 4-bit | promoted | Passed startup, health, models, capabilities, chat, determinism, JSON mode, streaming |
+| `mlx-community/Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-6bit` | 6-bit | promoted | Passed startup, health, models, capabilities, chat, determinism, JSON mode, streaming |
+| `wbkou/Qwen3.5-27B-Claude-4.6-Opus-Reasoning-Distilled-8bit-MLX` | 8-bit | promoted | Passed startup, health, models, capabilities, chat, determinism, JSON mode, streaming |
+
 ## Multimodal Models (via mlx-vlm)
 
 | Model Family | Example Models |

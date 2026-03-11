@@ -150,14 +150,19 @@ MLLM_METADATA_FILES = [
     "model.safetensors.index.json",
 ]
 
-MLLM_CONFIG_KEYS = {
+MLLM_STRONG_CONFIG_KEYS = {
     "vision_config",
+    "image_processor_type",
+    "video_processor_type",
+}
+
+# Some Qwen checkpoints inherit these token IDs even when no vision encoder is
+# present. Treat them as weak hints only and require stronger evidence.
+MLLM_WEAK_TOKEN_KEYS = {
     "image_token_id",
     "vision_start_token_id",
     "vision_end_token_id",
     "video_token_id",
-    "image_processor_type",
-    "video_processor_type",
 }
 
 MLLM_PROCESSOR_HINTS = (
@@ -195,15 +200,29 @@ def _load_json_file(path: Path) -> dict | None:
 def _metadata_indicates_mllm(model_dir: Path) -> bool:
     """Check local model metadata for multimodal markers."""
     config = _load_json_file(model_dir / "config.json")
+    weak_token_hint = False
     if isinstance(config, dict):
-        if any(key in config for key in MLLM_CONFIG_KEYS):
+        vision_config = config.get("vision_config")
+        if isinstance(vision_config, dict) and vision_config:
             return True
+        if any(
+            key in config and config.get(key) is not None
+            for key in MLLM_STRONG_CONFIG_KEYS - {"vision_config"}
+        ):
+            return True
+        weak_token_hint = any(
+            key in config and config.get(key) is not None for key in MLLM_WEAK_TOKEN_KEYS
+        )
         architectures = config.get("architectures")
         if isinstance(architectures, list) and any(
             "ConditionalGeneration" in str(arch) for arch in architectures
         ):
             text_config = config.get("text_config")
-            if isinstance(text_config, dict) and "vision_config" in config:
+            if (
+                isinstance(text_config, dict)
+                and isinstance(vision_config, dict)
+                and vision_config
+            ):
                 return True
 
     for name in (
@@ -214,7 +233,10 @@ def _metadata_indicates_mllm(model_dir: Path) -> bool:
         processor_config = _load_json_file(model_dir / name)
         if not isinstance(processor_config, dict):
             continue
-        if any(key in processor_config for key in MLLM_CONFIG_KEYS):
+        if any(
+            key in processor_config and processor_config.get(key) is not None
+            for key in (MLLM_STRONG_CONFIG_KEYS | MLLM_WEAK_TOKEN_KEYS)
+        ):
             return True
         processor_class = processor_config.get("processor_class")
         if isinstance(processor_class, str) and any(
@@ -231,6 +253,10 @@ def _metadata_indicates_mllm(model_dir: Path) -> bool:
             for prefix in MLLM_WEIGHT_PREFIXES
         ):
             return True
+
+    # Weak token markers alone are not enough to classify a model as multimodal.
+    if weak_token_hint:
+        return False
 
     return False
 
