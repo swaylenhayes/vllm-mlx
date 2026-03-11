@@ -160,6 +160,7 @@ _VIDEO_FPS_MIN = 0.1
 _VIDEO_FPS_MAX = 8.0
 _VIDEO_MAX_FRAMES_MAX = 128
 _VIDEO_MAX_INPUTS_PER_REQUEST = 4
+_STRUCTURED_OUTPUT_MIN_MAX_TOKENS = 120
 
 
 class ConcurrencyTracker:
@@ -693,6 +694,50 @@ def _resolve_enable_thinking(request: ChatCompletionRequest) -> bool | None:
     if request.response_format is not None:
         return False
     return None
+
+
+def _response_format_type(response_format: Any) -> str:
+    """Return normalized response_format type for structured-output routing."""
+    if response_format is None:
+        return "text"
+    if isinstance(response_format, dict):
+        value = response_format.get("type", "text")
+        return str(value).strip().lower()
+
+    value = getattr(response_format, "type", "text")
+    return str(value).strip().lower()
+
+
+def _uses_structured_output(response_format: Any) -> bool:
+    """True when request asks for server-side JSON enforcement."""
+    return _response_format_type(response_format) in {"json_object", "json_schema"}
+
+
+def _resolve_effective_chat_max_tokens(request: ChatCompletionRequest) -> int:
+    """
+    Resolve chat max_tokens with a JSON-mode safety floor.
+
+    Rationale: Some checkpoints emit preamble/partial JSON under tight budgets
+    even with non-thinking posture. A small floor keeps JSON-mode responses
+    parseable for common extraction request shapes.
+    """
+    effective = _resolve_effective_max_tokens(request.max_tokens)
+    if not _uses_structured_output(request.response_format):
+        return effective
+    if effective >= _STRUCTURED_OUTPUT_MIN_MAX_TOKENS:
+        return effective
+
+    # Respect memory-pressure downscaling: do not raise under constrained state.
+    if _memory_state.max_tokens_factor() < 0.999:
+        return effective
+
+    logger.info(
+        "Applied structured-output max_tokens floor: request=%s effective=%s floor=%s",
+        request.max_tokens,
+        effective,
+        _STRUCTURED_OUTPUT_MIN_MAX_TOKENS,
+    )
+    return _STRUCTURED_OUTPUT_MIN_MAX_TOKENS
 
 
 def _get_text_tokenizer() -> Any | None:
@@ -4153,7 +4198,7 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
             messages = _inject_json_instruction(messages, json_instruction)
 
     # Prepare kwargs
-    effective_max_tokens = _resolve_effective_max_tokens(request.max_tokens)
+    effective_max_tokens = _resolve_effective_chat_max_tokens(request)
     chat_kwargs = {
         "max_tokens": effective_max_tokens,
         "temperature": _resolve_temperature(request.temperature),

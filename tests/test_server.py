@@ -503,6 +503,64 @@ class TestHelperFunctions:
         monkeypatch.setattr(server, "_memory_state", DummyState())
         assert server._resolve_effective_max_tokens(200) == 100
 
+    def test_resolve_effective_chat_max_tokens_applies_json_floor(self, monkeypatch):
+        import vllm_mlx.server as server
+
+        class DummyState:
+            def max_tokens_factor(self):
+                return 1.0
+
+        monkeypatch.setattr(server, "_memory_state", DummyState())
+        request = server.ChatCompletionRequest(
+            model="test-model",
+            messages=[server.Message(role="user", content="Return JSON")],
+            max_tokens=16,
+            response_format={"type": "json_object"},
+        )
+
+        assert (
+            server._resolve_effective_chat_max_tokens(request)
+            == server._STRUCTURED_OUTPUT_MIN_MAX_TOKENS
+        )
+
+    def test_resolve_effective_chat_max_tokens_keeps_non_json_request(
+        self, monkeypatch
+    ):
+        import vllm_mlx.server as server
+
+        class DummyState:
+            def max_tokens_factor(self):
+                return 1.0
+
+        monkeypatch.setattr(server, "_memory_state", DummyState())
+        request = server.ChatCompletionRequest(
+            model="test-model",
+            messages=[server.Message(role="user", content="Hello")],
+            max_tokens=16,
+        )
+
+        assert server._resolve_effective_chat_max_tokens(request) == 16
+
+    def test_resolve_effective_chat_max_tokens_respects_memory_pressure(
+        self, monkeypatch
+    ):
+        import vllm_mlx.server as server
+
+        class DummyState:
+            def max_tokens_factor(self):
+                return 0.5
+
+        monkeypatch.setattr(server, "_memory_state", DummyState())
+        request = server.ChatCompletionRequest(
+            model="test-model",
+            messages=[server.Message(role="user", content="Return JSON")],
+            max_tokens=80,
+            response_format={"type": "json_object"},
+        )
+
+        # Under memory pressure, keep downscaled budget and do not apply floor.
+        assert server._resolve_effective_chat_max_tokens(request) == 40
+
     def test_aggregate_diagnostic_status(self):
         from vllm_mlx.server import (
             DiagnosticCheck,

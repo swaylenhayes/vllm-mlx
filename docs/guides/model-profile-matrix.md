@@ -14,6 +14,8 @@ Important rules:
 - `enable_thinking` is a request field, not a serve flag
 - omitted `enable_thinking` now auto-resolves to `false` for structured-output
   requests while plain chat keeps model/template defaults
+- structured-output requests apply a small `max_tokens` floor (`120`) when
+  memory pressure is normal to avoid truncated JSON outputs
 
 ## Compatibility Highlights
 
@@ -22,12 +24,7 @@ Fresh validated Qwen3.5 checkpoints on the repo checkout:
 | Family | Checkpoints validated | Notes |
 |---|---|---|
 | Qwen3.5 multimodal | `Qwen3.5-4B-4bit`, `Qwen3.5-4B-8bit`, `Qwen3.5-9B-4bit`, `Qwen3.5-9B-8bit` | Startup, health, model listing, text chat, multimodal chat, and JSON-schema sanity validated |
-| Distilled Qwen3.5 text (Stage 3) | Jackrong `2B/4B/9B` (4-bit + 8-bit), Jackrong `27B-4bit`, `mlx-community` `27B-6bit`, `wbkou` `27B-8bit` | 7 promoted. 2 conditional for JSON mode when `enable_thinking` is omitted (see note below). |
-
-Stage 3 conditional JSON note (`2026-03-11`):
-- `Jackrong/MLX-Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-4bit`
-- `Jackrong/MLX-Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-8bit`
-- Both pass JSON mode when `enable_thinking=false` is set explicitly at request time.
+| Distilled Qwen3.5 text (Stage 3) | Jackrong `2B/4B/9B` (4-bit + 8-bit), Jackrong `27B-4bit`, `mlx-community` `27B-6bit`, `wbkou` `27B-8bit` | All 9 promoted after item1 JSON-mode remediation rerun (`2026-03-11`). |
 
 ## Quick Picks
 

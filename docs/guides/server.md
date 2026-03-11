@@ -755,6 +755,10 @@ See [Reasoning Models Guide](reasoning.md) for full details.
 
 Force the model to return valid JSON using `response_format`:
 
+Note: for chat requests using `json_object` or `json_schema`, the backend
+applies a small safety floor to `max_tokens` (`120`) when memory pressure is
+normal to reduce partial/truncated JSON responses.
+
 ### JSON Object Mode
 
 Returns any valid JSON:

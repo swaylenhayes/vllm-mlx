@@ -34,18 +34,24 @@ Runtime qualification artifacts:
 
 - `/Users/swaylen/dev/vllm-mlx-fork/_docs/exports/stage3-distilled-qwen35-runtime-qualification-2026-03-11-run5-final/stage3_runtime_qualification_summary.md`
 - `/Users/swaylen/dev/vllm-mlx-fork/_docs/exports/stage3-distilled-qwen35-runtime-qualification-2026-03-11-run5-final/stage3_runtime_qualification_results.json`
+- `/Users/swaylen/dev/vllm-mlx-fork/_docs/exports/stage3-distilled-qwen35-runtime-qualification-2026-03-11-item1/stage3_runtime_qualification_summary.md`
+- `/Users/swaylen/dev/vllm-mlx-fork/_docs/exports/stage3-distilled-qwen35-runtime-qualification-2026-03-11-item1/stage3_runtime_qualification_results.json`
 
 | Model ID | Quant | Status | Notes |
 |----------|-------|--------|-------|
 | `Jackrong/MLX-Qwen3.5-2B-Claude-4.6-Opus-Reasoning-Distilled-8bit` | 8-bit | promoted | Passed startup, health, models, capabilities, chat, determinism, JSON mode, streaming |
 | `Jackrong/MLX-Qwen3.5-2B-Claude-4.6-Opus-Reasoning-Distilled-4bit` | 4-bit | promoted | Passed startup, health, models, capabilities, chat, determinism, JSON mode, streaming |
 | `Jackrong/MLX-Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-8bit` | 8-bit | promoted | Passed startup, health, models, capabilities, chat, determinism, JSON mode, streaming |
-| `Jackrong/MLX-Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-4bit` | 4-bit | conditional | JSON mode degraded when `enable_thinking` omitted; passes with explicit `enable_thinking=false` |
-| `Jackrong/MLX-Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-8bit` | 8-bit | conditional | JSON mode degraded when `enable_thinking` omitted; passes with explicit `enable_thinking=false` |
+| `Jackrong/MLX-Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-4bit` | 4-bit | promoted | Initially conditional on JSON mode in run5; promoted after item1 remediation rerun |
+| `Jackrong/MLX-Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-8bit` | 8-bit | promoted | Initially conditional on JSON mode in run5; promoted after item1 remediation rerun |
 | `Jackrong/MLX-Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-4bit` | 4-bit | promoted | Passed startup, health, models, capabilities, chat, determinism, JSON mode, streaming |
 | `Jackrong/MLX-Qwen3.5-27B-Claude-4.6-Opus-Reasoning-Distilled-4bit` | 4-bit | promoted | Passed startup, health, models, capabilities, chat, determinism, JSON mode, streaming |
 | `mlx-community/Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-6bit` | 6-bit | promoted | Passed startup, health, models, capabilities, chat, determinism, JSON mode, streaming |
 | `wbkou/Qwen3.5-27B-Claude-4.6-Opus-Reasoning-Distilled-8bit-MLX` | 8-bit | promoted | Passed startup, health, models, capabilities, chat, determinism, JSON mode, streaming |
+
+JSON-mode remediation note:
+- Structured-output chat requests now apply a `max_tokens` floor of `120` when memory pressure is normal.
+- This closed the prior low-budget truncation failure mode on the two held checkpoints.
 
 ## Multimodal Models (via mlx-vlm)
 

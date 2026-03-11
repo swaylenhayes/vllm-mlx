@@ -378,6 +378,7 @@ async def test_create_chat_completion_defaults_structured_output_to_non_thinking
 
     _, chat_kwargs = engine.chat.call_args
     assert chat_kwargs["enable_thinking"] is False
+    assert chat_kwargs["max_tokens"] == server._STRUCTURED_OUTPUT_MIN_MAX_TOKENS
 
 
 @pytest.mark.asyncio

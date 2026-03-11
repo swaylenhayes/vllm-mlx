@@ -43,7 +43,7 @@ Validated behaviors on the Qwen3.5 family:
 
 Additional Stage 3 distilled Qwen3.5 runtime qualification (`2026-03-11`):
 
-- 7 models promoted, 2 conditional for JSON mode when `enable_thinking` is omitted
+- all 9 models promoted after JSON-mode remediation follow-up
 - full model list and status notes: [Supported Models](docs/reference/models.md)
 
 Recommended first profile:
