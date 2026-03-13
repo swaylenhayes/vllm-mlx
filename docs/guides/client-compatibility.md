@@ -60,6 +60,7 @@ Only rows with exact execution evidence are listed here as validated.
 | Open WebUI | web app | OpenAI-compatible provider connection | pass | pass | pass | conditional | pass | pass | planned | `open-webui-text` then `open-webui-mllm` | conditional |
 | Cherry Studio | desktop app | custom service provider (`type=OpenAI`) | pass | pass | pass | planned | planned | pass | inferred pass | `cherry-studio` | conditional |
 | Chatbox | desktop app | built-in OpenAI provider connection | pass | pass | planned | conditional | pass | pass | inferred pass | `chatbox` | conditional |
+| Witsy | desktop app | built-in OpenAI engine with explicit `/v1` base URL | pass | pass | pass | conditional | planned | pass | inferred pass | `witsy` | conditional |
 
 Why Goose is still overall `conditional`:
 
@@ -75,6 +76,11 @@ Why Chatbox is still overall `conditional`:
 - system prompt handling has not been independently validated yet
 - tool-use request acceptance is validated, but full tool execution semantics are not yet independently confirmed
 
+Why Witsy is still overall `conditional`:
+
+- tool schema acceptance is validated, but full tool execution semantics are not yet independently confirmed
+- multimodal has not been formally validated yet
+
 Backing evidence:
 
 - Validation runs are evidence-backed and archived in internal run artifacts used to populate this table.
@@ -85,8 +91,7 @@ These targets are actively queued but not yet published as validated:
 
 | Target | Best path | Current state |
 |---|---|---|
-| LibreChat | `librechat` | next queued client row after Cherry Studio and Chatbox |
-| Witsy | `witsy` | queued alternative after LibreChat for desktop MCP and capability-signaling validation |
+| LibreChat | `librechat` | next queued client row after Cherry Studio, Chatbox, and Witsy |
 | Jan | `jan` | checklist + corpus + internal guide ready, but deferred after reprioritization |
 | AnythingLLM | `anythingllm` | checklist + corpus + internal guide ready, but deferred after reprioritization |
 | BoltAI | `boltai` | lower-priority desktop client row |
@@ -139,6 +144,27 @@ Chatbox notes:
   - vision probe: multimodal `image_url` content accepted over the same chat-completions route
   - tool-use probe: `tools=1`, last user message `What is the weather in San Francisco?`
 - the built-in Chatbox connection test reported green checks for text request, vision request, and tool-use request
+
+Witsy notes:
+
+- validated on local Witsy `v3.5.2`
+- use the built-in `OpenAI` engine for the first-pass compatibility path
+- successful local path:
+  - start `scripts/serve_client_profile.sh witsy mlx-community/Qwen3-4B-Instruct-2507-4bit`
+  - set API key to `witsy-local`
+  - set API Base URL to `http://127.0.0.1:8000/v1`
+  - set `Chat model` to `mlx-community/Qwen3-4B-Instruct-2507-4bit`
+- compatibility-specific behavior:
+  - Witsy does not discover models when the base URL is only `http://127.0.0.1:8000`
+  - the base URL must include `/v1`, otherwise the app probes `/models` instead of `/v1/models`
+- observed validation contract:
+  - `GET /v1/models`
+  - streamed `POST /v1/chat/completions`
+  - exact model id: `mlx-community/Qwen3-4B-Instruct-2507-4bit`
+  - simple text probe still includes `roles=['system', 'user']`
+  - Witsy auto-advertises `tools=3` even for a basic `hi` message
+  - last user message: `hi`
+  - the app emits a follow-up streamed title-generation request after the first response
 
 ## Connection Notes
 
