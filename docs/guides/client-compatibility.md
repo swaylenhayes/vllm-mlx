@@ -59,6 +59,7 @@ Only rows with exact execution evidence are listed here as validated.
 | Goose | terminal agent | built-in OpenAI provider first | pass | pass | pass | pass | planned | pass | pass | `goose-text` then `goose-tools` | conditional |
 | Open WebUI | web app | OpenAI-compatible provider connection | pass | pass | pass | conditional | pass | pass | planned | `open-webui-text` then `open-webui-mllm` | conditional |
 | Cherry Studio | desktop app | custom service provider (`type=OpenAI`) | pass | pass | pass | planned | planned | pass | inferred pass | `cherry-studio` | conditional |
+| Chatbox | desktop app | built-in OpenAI provider connection | pass | pass | planned | conditional | pass | pass | inferred pass | `chatbox` | conditional |
 
 Why Goose is still overall `conditional`:
 
@@ -68,6 +69,11 @@ Why Cherry Studio is still overall `conditional`:
 
 - tool calling has not been formally validated yet
 - multimodal has not been formally validated yet
+
+Why Chatbox is still overall `conditional`:
+
+- system prompt handling has not been independently validated yet
+- tool-use request acceptance is validated, but full tool execution semantics are not yet independently confirmed
 
 Backing evidence:
 
@@ -79,9 +85,8 @@ These targets are actively queued but not yet published as validated:
 
 | Target | Best path | Current state |
 |---|---|---|
-| Chatbox | `chatbox` | next external desktop client row after Cherry Studio |
-| LibreChat | `librechat` | queued for capability-signaling and agent-style validation |
-| Witsy | `witsy` | queued for desktop MCP and capability-signaling validation |
+| LibreChat | `librechat` | next queued client row after Cherry Studio and Chatbox |
+| Witsy | `witsy` | queued alternative after LibreChat for desktop MCP and capability-signaling validation |
 | Jan | `jan` | checklist + corpus + internal guide ready, but deferred after reprioritization |
 | AnythingLLM | `anythingllm` | checklist + corpus + internal guide ready, but deferred after reprioritization |
 | BoltAI | `boltai` | lower-priority desktop client row |
@@ -113,6 +118,27 @@ Cherry Studio notes:
 - the provider check disconnects after the first streamed chunk and still reports
   success; this is expected for Cherry Studio's connectivity probe
 - screenshot artifact: [Cherry Studio connection check success](../assets/client-compatibility/cherry-studio-check-success.png)
+
+Chatbox notes:
+
+- validated on local Chatbox `v1.19.1`
+- use the built-in `OpenAI` provider for the first-pass compatibility path
+- successful local path:
+  - start `scripts/serve_client_profile.sh chatbox mlx-community/Qwen3-4B-Instruct-2507-4bit`
+  - set API key to `chatbox-local`
+  - set API host to `http://127.0.0.1:8000`
+  - verify the derived preview becomes `http://127.0.0.1:8000/v1/chat/completions`
+  - run `Fetch`
+  - run `Check`
+  - set `Default Chat Model` to `mlx-community/Qwen3-4B-Instruct-2507-4bit`
+- observed validation contract:
+  - `GET /v1/models`
+  - streamed `POST /v1/chat/completions`
+  - exact model id: `mlx-community/Qwen3-4B-Instruct-2507-4bit`
+  - text probe: `roles=['user']`, last user message `Hi`
+  - vision probe: multimodal `image_url` content accepted over the same chat-completions route
+  - tool-use probe: `tools=1`, last user message `What is the weather in San Francisco?`
+- the built-in Chatbox connection test reported green checks for text request, vision request, and tool-use request
 
 ## Connection Notes
 
