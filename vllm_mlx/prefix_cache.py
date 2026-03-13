@@ -29,6 +29,38 @@ from .paged_cache import BlockTable, PagedCacheManager
 logger = logging.getLogger(__name__)
 
 
+def _get_cache_tensor_ndim(tensor: Any) -> int:
+    """Return tensor rank for cache tensors that expose shape metadata."""
+    shape = getattr(tensor, "shape", None)
+    if shape is None:
+        raise ValueError("Cache tensor is missing shape metadata")
+
+    ndim = getattr(tensor, "ndim", None)
+    return int(ndim) if ndim is not None else len(shape)
+
+
+def _get_cache_sequence_axis(tensor: Any) -> int:
+    """Return the sequence axis for 3D and 4D KV cache tensors."""
+    ndim = _get_cache_tensor_ndim(tensor)
+    if ndim < 3:
+        raise ValueError(f"Unsupported cache tensor rank: {ndim}")
+    return ndim - 2
+
+
+def _get_cache_sequence_length(tensor: Any) -> int:
+    """Return sequence length for a cache tensor."""
+    seq_axis = _get_cache_sequence_axis(tensor)
+    return int(tensor.shape[seq_axis])
+
+
+def _slice_cache_tensor(tensor: Any, start_idx: int, end_idx: int) -> Any:
+    """Slice a cache tensor along its sequence axis."""
+    ndim = _get_cache_tensor_ndim(tensor)
+    slices = [slice(None)] * ndim
+    slices[_get_cache_sequence_axis(tensor)] = slice(start_idx, end_idx)
+    return tensor[tuple(slices)]
+
+
 @dataclass
 class CacheEntry:
     """Entry in the prefix cache."""
@@ -652,9 +684,9 @@ class BlockAwarePrefixCache:
 
                 keys, values = layer_state["state"]
 
-                # KV cache shape: (batch, n_kv_heads, seq_len, head_dim)
-                # Slice along seq_len dimension (axis 2)
-                seq_len = keys.shape[2] if hasattr(keys, "shape") else 0
+                # Qwen-family caches may be 3D or 4D. In both cases the
+                # sequence axis is the second-to-last dimension.
+                seq_len = _get_cache_sequence_length(keys)
 
                 if end_idx > seq_len:
                     # Requested range extends beyond available data
@@ -665,11 +697,13 @@ class BlockAwarePrefixCache:
                     actual_end = min(end_idx, seq_len)
                     if start_idx >= actual_end:
                         continue
-                    keys_slice = keys[:, :, start_idx:actual_end, :]
-                    values_slice = values[:, :, start_idx:actual_end, :]
+                    keys_slice = _slice_cache_tensor(keys, start_idx, actual_end)
+                    values_slice = _slice_cache_tensor(
+                        values, start_idx, actual_end
+                    )
                 else:
-                    keys_slice = keys[:, :, start_idx:end_idx, :]
-                    values_slice = values[:, :, start_idx:end_idx, :]
+                    keys_slice = _slice_cache_tensor(keys, start_idx, end_idx)
+                    values_slice = _slice_cache_tensor(values, start_idx, end_idx)
 
                 block_slices.append((keys_slice, values_slice))
 
@@ -821,10 +855,11 @@ class BlockAwarePrefixCache:
                 if not layer_keys:
                     continue
 
-                # Concatenate along sequence dimension (axis 2)
-                # Shape: (batch, n_kv_heads, seq_len, head_dim)
-                concat_keys = mx.concatenate(layer_keys, axis=2)
-                concat_values = mx.concatenate(layer_values, axis=2)
+                # Concatenate along the sequence axis, which varies between
+                # 3D and 4D KV cache layouts.
+                seq_axis = _get_cache_sequence_axis(layer_keys[0])
+                concat_keys = mx.concatenate(layer_keys, axis=seq_axis)
+                concat_values = mx.concatenate(layer_values, axis=seq_axis)
 
                 # Create KVCache object
                 # Try to use mlx_lm's KVCache.from_state if available
@@ -833,7 +868,7 @@ class BlockAwarePrefixCache:
 
                     # Create new cache and set its state
                     cache = KVCache()
-                    seq_len = concat_keys.shape[2]
+                    seq_len = _get_cache_sequence_length(concat_keys)
 
                     # Set internal state directly
                     # KVCache stores keys/values and offset
@@ -849,7 +884,7 @@ class BlockAwarePrefixCache:
                         def __init__(self, keys, values):
                             self.keys = keys
                             self.values = values
-                            self.offset = keys.shape[2]
+                            self.offset = _get_cache_sequence_length(keys)
 
                         @property
                         def state(self):

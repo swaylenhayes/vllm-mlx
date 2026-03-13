@@ -725,3 +725,58 @@ class TestBlockAwarePrefixCache:
         stats = cache.get_stats()
         # After clear, null block is still allocated (vLLM style)
         assert stats["allocated_blocks"] == 1  # only null block
+
+    def test_extract_block_tensor_slice_supports_3d_kv_tensors(self):
+        """3D Qwen-style KV tensors should slice along the sequence axis."""
+        import mlx.core as mx
+
+        from vllm_mlx.paged_cache import PagedCacheManager
+        from vllm_mlx.prefix_cache import BlockAwarePrefixCache
+
+        paged_manager = PagedCacheManager(block_size=3, max_blocks=10)
+        cache = BlockAwarePrefixCache(model=None, paged_cache_manager=paged_manager)
+
+        keys = mx.arange(12).reshape(1, 6, 2)
+        values = mx.arange(100, 112).reshape(1, 6, 2)
+
+        slices = cache._extract_block_tensor_slice(
+            [{"state": (keys, values)}], start_idx=2, end_idx=5
+        )
+
+        assert slices is not None
+        keys_slice, values_slice = slices[0]
+        assert keys_slice.shape == (1, 3, 2)
+        assert values_slice.shape == (1, 3, 2)
+        assert keys_slice.tolist() == keys[:, 2:5, :].tolist()
+        assert values_slice.tolist() == values[:, 2:5, :].tolist()
+
+    def test_reconstruct_cache_supports_3d_kv_tensors(self):
+        """Reconstruction should concatenate 3D KV tensors along seq axis."""
+        import mlx.core as mx
+
+        from vllm_mlx.paged_cache import PagedCacheManager
+        from vllm_mlx.prefix_cache import BlockAwarePrefixCache
+
+        paged_manager = PagedCacheManager(block_size=3, max_blocks=10)
+        cache = BlockAwarePrefixCache(model=None, paged_cache_manager=paged_manager)
+
+        tokens = list(range(6))
+        keys = mx.arange(12).reshape(1, 6, 2)
+        values = mx.arange(100, 112).reshape(1, 6, 2)
+        block_table = cache.store_cache(
+            "req-3d",
+            tokens,
+            [{"state": (keys, values), "meta_state": ("6",)}],
+        )
+
+        assert block_table is not None
+
+        reconstructed = cache.reconstruct_cache(block_table)
+
+        assert reconstructed is not None
+        assert len(reconstructed) == 1
+        assert reconstructed[0].keys.shape == (1, 6, 2)
+        assert reconstructed[0].values.shape == (1, 6, 2)
+        assert reconstructed[0].offset == 6
+        assert reconstructed[0].keys.tolist() == keys.tolist()
+        assert reconstructed[0].values.tolist() == values.tolist()
