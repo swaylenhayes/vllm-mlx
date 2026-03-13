@@ -122,6 +122,17 @@ def _detect_repetition(
     )
 
 
+def _trim_trimmable_prompt_cache(prompt_cache: list[Any], num_tokens: int) -> None:
+    """Trim cache layers only when they expose an actual trim method."""
+    for cache_layer in prompt_cache:
+        if (
+            hasattr(cache_layer, "is_trimmable")
+            and cache_layer.is_trimmable()
+            and hasattr(cache_layer, "trim")
+        ):
+            cache_layer.trim(num_tokens)
+
+
 class SchedulingPolicy(Enum):
     """Scheduling policy for request ordering."""
 
@@ -932,9 +943,7 @@ def _install_mtp(
                         # Hybrid model: undo the entire verify pass
                         # (both P and D) for all cache types, then
                         # re-advance with just P for a consistent state.
-                        for c in prompt_cache:
-                            if hasattr(c, "is_trimmable") and c.is_trimmable():
-                                c.trim(2)
+                        _trim_trimmable_prompt_cache(prompt_cache, 2)
                         for _ci, _snap in _rnn_snapshots.items():
                             prompt_cache[_ci].state = _snap
                         # Re-advance with primary only — both KV and RNN
@@ -962,9 +971,7 @@ def _install_mtp(
                             _skip_state[0] = None
                     else:
                         # Pure attention model: simple trim(1) is enough.
-                        for c in prompt_cache:
-                            if hasattr(c, "is_trimmable") and c.is_trimmable():
-                                c.trim(1)
+                        _trim_trimmable_prompt_cache(prompt_cache, 1)
                         if verify_hidden is not None:
                             _skip_state[0] = {
                                 "logits": verify_logits[:, 0, :],

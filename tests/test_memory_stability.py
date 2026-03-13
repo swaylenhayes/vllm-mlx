@@ -11,7 +11,11 @@ Verifies that:
 from unittest.mock import MagicMock, patch
 
 from vllm_mlx.request import SamplingParams
-from vllm_mlx.scheduler import Scheduler, SchedulerConfig
+from vllm_mlx.scheduler import (
+    Scheduler,
+    SchedulerConfig,
+    _trim_trimmable_prompt_cache,
+)
 
 
 def _make_scheduler(
@@ -159,6 +163,50 @@ class TestClearCacheInterval:
         scheduler._cleanup_finished(set())
 
         mock_mx.clear_cache.assert_not_called()
+
+
+class TestTrimTrimmablePromptCache:
+    """Tests for defensive prompt-cache trimming."""
+
+    def test_ignores_trimmable_objects_without_trim(self):
+        """Objects that report trimmable but lack trim() should be skipped."""
+
+        class TrimmableNoTrim:
+            def is_trimmable(self):
+                return True
+
+        _trim_trimmable_prompt_cache([TrimmableNoTrim()], 2)
+
+    def test_trims_only_supported_layers(self):
+        """Only trimmable cache layers with trim() should be trimmed."""
+
+        class TrimmableWithTrim:
+            def __init__(self):
+                self.calls = []
+
+            def is_trimmable(self):
+                return True
+
+            def trim(self, amount):
+                self.calls.append(amount)
+
+        class NotTrimmable:
+            def __init__(self):
+                self.calls = []
+
+            def is_trimmable(self):
+                return False
+
+            def trim(self, amount):
+                self.calls.append(amount)
+
+        supported = TrimmableWithTrim()
+        unsupported = NotTrimmable()
+
+        _trim_trimmable_prompt_cache([supported, unsupported, object()], 1)
+
+        assert supported.calls == [1]
+        assert unsupported.calls == []
 
 
 class TestIncrementalCacheEval:
