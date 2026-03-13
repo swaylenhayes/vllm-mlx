@@ -15,8 +15,13 @@ Client profiles:
   goose-tools         Goose CLI with tool-calling enabled
   open-webui-text     Open WebUI text connection
   open-webui-mllm     Open WebUI multimodal connection
+  cherry-studio       Cherry Studio desktop text baseline
+  chatbox             Chatbox desktop text baseline
+  librechat           LibreChat text baseline
+  witsy               Witsy desktop text baseline
   jan                 Jan remote OpenAI-compatible engine
   anythingllm         AnythingLLM generic OpenAI provider
+  boltai              BoltAI desktop text baseline
   generic-openai      Generic OpenAI-compatible desktop/web client
   generic-mllm        Generic multimodal OpenAI-compatible client
 
@@ -78,6 +83,22 @@ case "$CLIENT_PROFILE" in
     SERVE_PROFILE="mllm-default"
     DEFAULT_API_KEY="openwebui-local"
     ;;
+  cherry-studio)
+    SERVE_PROFILE="text-default"
+    DEFAULT_API_KEY="cherrystudio-local"
+    ;;
+  chatbox)
+    SERVE_PROFILE="text-default"
+    DEFAULT_API_KEY="chatbox-local"
+    ;;
+  librechat)
+    SERVE_PROFILE="text-default"
+    DEFAULT_API_KEY="librechat-local"
+    ;;
+  witsy)
+    SERVE_PROFILE="text-default"
+    DEFAULT_API_KEY="witsy-local"
+    ;;
   jan)
     SERVE_PROFILE="text-default"
     DEFAULT_API_KEY="jan-local"
@@ -85,6 +106,10 @@ case "$CLIENT_PROFILE" in
   anythingllm)
     SERVE_PROFILE="text-default"
     DEFAULT_API_KEY="anythingllm-local"
+    ;;
+  boltai)
+    SERVE_PROFILE="text-default"
+    DEFAULT_API_KEY="boltai-local"
     ;;
   generic-openai)
     SERVE_PROFILE="text-default"

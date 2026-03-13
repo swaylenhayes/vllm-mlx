@@ -40,8 +40,13 @@ and sets a matching default API key unless you override it with
 | `goose-tools` | `text-tools` | `goose-local` | Goose tool-calling |
 | `open-webui-text` | `text-default` | `openwebui-local` | Open WebUI text setup |
 | `open-webui-mllm` | `mllm-default` | `openwebui-local` | Open WebUI image chat |
+| `cherry-studio` | `text-default` | `cherrystudio-local` | Cherry Studio desktop baseline |
+| `chatbox` | `text-default` | `chatbox-local` | Chatbox desktop baseline |
+| `librechat` | `text-default` | `librechat-local` | LibreChat text baseline |
+| `witsy` | `text-default` | `witsy-local` | Witsy desktop baseline |
 | `jan` | `text-default` | `jan-local` | Jan remote engine |
 | `anythingllm` | `text-default` | `anythingllm-local` | AnythingLLM generic OpenAI provider |
+| `boltai` | `text-default` | `boltai-local` | BoltAI desktop baseline |
 | `generic-openai` | `text-default` | `local-client` | Generic desktop/web OpenAI-compatible clients |
 | `generic-mllm` | `mllm-default` | `local-client` | Generic multimodal OpenAI-compatible clients |
 
@@ -68,8 +73,13 @@ These targets are actively queued but not yet published as validated:
 
 | Target | Best path | Current state |
 |---|---|---|
-| Jan | `jan` | checklist + corpus + internal guide ready |
-| AnythingLLM | `anythingllm` | checklist + corpus + internal guide ready |
+| Cherry Studio | `cherry-studio` | next external desktop client row |
+| Chatbox | `chatbox` | second desktop client row after Cherry Studio |
+| LibreChat | `librechat` | queued for capability-signaling and agent-style validation |
+| Witsy | `witsy` | queued for desktop MCP and capability-signaling validation |
+| Jan | `jan` | checklist + corpus + internal guide ready, but deferred after reprioritization |
+| AnythingLLM | `anythingllm` | checklist + corpus + internal guide ready, but deferred after reprioritization |
+| BoltAI | `boltai` | lower-priority desktop client row |
 
 Open WebUI notes:
 
