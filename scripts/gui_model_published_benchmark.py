@@ -15,6 +15,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+HOME_DIR = Path.home()
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -49,10 +50,14 @@ def _safe_git_commit(repo_root: Path) -> str:
 
 
 def _display_path(path: Path) -> str:
+    resolved = path.resolve()
     try:
-        return str(path.resolve().relative_to(REPO_ROOT))
+        return str(resolved.relative_to(REPO_ROOT))
     except ValueError:
-        return str(path.resolve())
+        try:
+            return f"~/{resolved.relative_to(HOME_DIR)}"
+        except ValueError:
+            return f"[external] {resolved.name}"
 
 
 def _derive_packet_id(packet_name: str | None, cohort: str) -> str:
@@ -357,9 +362,7 @@ def main() -> int:
         "reference_model": args.reference_model,
         "packet_id": packet_id,
         "packet_doc": _display_path(packet_doc),
-        "packet_doc_abs": str(packet_doc),
         "seed_json": _display_path(seed_json),
-        "seed_json_abs": str(seed_json),
         "seed_provenance_note": args.seed_provenance_note,
         "packet": packet_name,
         "prefill_step_size": prefill_step_size,

@@ -30,12 +30,7 @@ Browse thousands of pre-optimized models at: **https://huggingface.co/mlx-commun
 
 ### Distilled Qwen3.5 (Stage 3 Runtime Qualification)
 
-Runtime qualification artifacts:
-
-- `/Users/swaylen/dev/vllm-mlx-fork/_docs/exports/stage3-distilled-qwen35-runtime-qualification-2026-03-11-run5-final/stage3_runtime_qualification_summary.md`
-- `/Users/swaylen/dev/vllm-mlx-fork/_docs/exports/stage3-distilled-qwen35-runtime-qualification-2026-03-11-run5-final/stage3_runtime_qualification_results.json`
-- `/Users/swaylen/dev/vllm-mlx-fork/_docs/exports/stage3-distilled-qwen35-runtime-qualification-2026-03-11-item1/stage3_runtime_qualification_summary.md`
-- `/Users/swaylen/dev/vllm-mlx-fork/_docs/exports/stage3-distilled-qwen35-runtime-qualification-2026-03-11-item1/stage3_runtime_qualification_results.json`
+Internal runtime qualification bundles exist for the initial run and the follow-up JSON-mode remediation rerun. The promoted status below reflects the final qualified state after that remediation pass.
 
 | Model ID | Quant | Status | Notes |
 |----------|-------|--------|-------|
